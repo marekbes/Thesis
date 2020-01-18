@@ -73,7 +73,7 @@ public:
             throw std::bad_alloc();
         }
 
-        for (auto i = 0; i < _num_buckets; ++i) {
+        for (unsigned int i = 0; i < _num_buckets; ++i) {
             _buckets[i].state = 0;
             _buckets[i].dirty = 0;
             //_reset_cnts[i] = 0;
@@ -184,16 +184,18 @@ public:
         throw std::runtime_error ("error: the hashtable is full \n");
     }
 
-    bool evict (KeyT &key) {
+    bool evict (const KeyT &key) {
         size_t ind = _hasher(key) & _mask, i = ind;
         for (; i < _num_buckets; i++) {
             if (_buckets[i].state && _eq(_buckets[i].key, key)) {
+                _buckets[i].dirty = 0;
                 _buckets[i].state = 0;
                 return true;
             }
         }
         for (i = 0; i < ind; i++) {
             if (_buckets[i].state && _eq(_buckets[i].key, key)) {
+                _buckets[i].dirty = 0;
                 _buckets[i].state = 0;
                 return true;
             }
