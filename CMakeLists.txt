@@ -4,7 +4,7 @@ project(proofOfConcept)
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(proofOfConcept main.cpp
-        HashTable.h ObjectPool.cpp)
+        HashTable.h ObjectPool.h Semaphore.h)
 
 SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread -lnuma -lboost_thread")
 if(NOT CMAKE_BUILD_TYPE)
@@ -24,4 +24,5 @@ message(INFO ${Boost_LIBRARIES})
 
 include_directories(${Boost_INCLUDE_DIRS})
 target_link_libraries(proofOfConcept PRIVATE
+        numa
         ${Boost_LIBRARIES})

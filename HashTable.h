@@ -5,7 +5,7 @@
 #include <climits>
 //#include <cstring>
 
-#define MAP_SIZE 32
+#define MAP_SIZE 512
 #define KEY_SIZE 4
 #define VALUE_SIZE 4
 
@@ -103,7 +103,7 @@ public:
     }
 
     void clear () {
-        for (auto i = 0; i < _num_buckets; ++i) {
+        for (unsigned int i = 0; i < _num_buckets; ++i) {
             _buckets[i].state = 0;
             _buckets[i].dirty = 0;
             _aggrs[i].initialise();
@@ -114,20 +114,22 @@ public:
     void insert (KeyT &key, ValueT &value, long timestamp) {
         size_t ind = _hasher(key) & _mask, i = ind;
         for (; i < _num_buckets; i++) {
-            if (!_buckets[i].state || _eq(_buckets[i].key, key)) {
+            if (!_buckets[i].state || _buckets[i].key ==  key) {
                 _buckets[i].state = 1;
                 _buckets[i].timestamp = timestamp;
                 _buckets[i].key = key; //std::memcpy(&_buckets[i].key, key, KEY_SIZE);
                 _buckets[i].value = value;
+                _num_filled++;
                 return;
             }
         }
         for (i = 0; i < ind; i++) {
-            if (!_buckets[i].state || _eq(_buckets[i].key, key)) {
+            if (!_buckets[i].state || _buckets[i].key == key) {
                 _buckets[i].state = 1;
                 _buckets[i].timestamp = timestamp;
                 _buckets[i].key = key;
                 _buckets[i].value = value;
+                _num_filled++;
                 return;
             }
         }
@@ -153,6 +155,7 @@ public:
                 _buckets[i].key = key;
                 _buckets[i].value = value;
                 _buckets[i].counter = 1;
+                _num_filled++;
                 return;
             }
         }
@@ -172,6 +175,7 @@ public:
                 _buckets[i].key = key;
                 _buckets[i].value = value;
                 _buckets[i].counter = 1;
+                _num_filled++;
                 return;
             }
         }
@@ -190,6 +194,7 @@ public:
             if (_buckets[i].state && _eq(_buckets[i].key, key)) {
                 _buckets[i].dirty = 0;
                 _buckets[i].state = 0;
+                _num_filled--;
                 return true;
             }
         }
@@ -197,6 +202,7 @@ public:
             if (_buckets[i].state && _eq(_buckets[i].key, key)) {
                 _buckets[i].dirty = 0;
                 _buckets[i].state = 0;
+                _num_filled--;
                 return true;
             }
         }
