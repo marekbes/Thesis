@@ -111,7 +111,7 @@ public:
         _num_filled = 0;
     }
 
-    void insert (KeyT &key, ValueT &value, long timestamp) {
+    void insert (const KeyT &key, const ValueT &value, const long timestamp) {
         size_t ind = _hasher(key) & _mask, i = ind;
         for (; i < _num_buckets; i++) {
             if (!_buckets[i].state || _buckets[i].key ==  key) {
@@ -142,9 +142,7 @@ public:
         for (; i < _num_buckets; i++) {
             tempState = _buckets[i].state;
             if (tempState && _eq(_buckets[i].key, key)) {
-                //_buckets[i].value = AggrT::aggregate(_buckets[i].value, value);
                 _buckets[i].value._1 = _buckets[i].value._1 + value._1;
-                //_buckets[i].value._2 = _buckets[i].value._2 < value._2 ? _buckets[i].value._2 : value._2;
                 _buckets[i].counter++;
                 return;
             }
@@ -162,9 +160,7 @@ public:
         for (i = 0; i < ind; i++) {
             tempState = _buckets[i].state;
             if (tempState && _eq(_buckets[i].key, key)) {
-                //_buckets[i].value._1 = AggrT::aggregate(_buckets[i].value, value);
                 _buckets[i].value._1 = _buckets[i].value._1 < value._1 ? _buckets[i].value._1 : value._1;
-                //_buckets[i].value._2 = _buckets[i].value._2 + value._2;
                 _buckets[i].counter++;
                 return;
             }

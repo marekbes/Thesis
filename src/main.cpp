@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <random>
 #include <unordered_set>
+#include <boost/program_options.hpp>
 
 bool debug = true;
 #define TUPLE_COUNT 1024 * 2
@@ -17,13 +18,15 @@ bool debug = true;
 
 std::vector<char> *StaticJoinData;
 boost::atomic_int64_t DataCounter(0);
-unsigned int ThreadCount = 8;
+unsigned int ThreadCount = 16;
+unsigned int RunLength = 0;
 unsigned int SegmentCount = 1;
 
 char output[1024];
 void *outputBuf = output;
 
-struct InputSchema_128 {
+struct InputSchema_128
+{
   long timestamp;
   long padding_0;
   long user_id;
@@ -32,7 +35,8 @@ struct InputSchema_128 {
   long ad_type;
   long event_type;
   long ip_address;
-  static void parse(InputSchema_128 &tuple, std::string &line) {
+  static void parse(InputSchema_128 &tuple, std::string &line)
+  {
     std::istringstream iss(line);
     std::vector<std::string> words{std::istream_iterator<std::string>{iss},
                                    std::istream_iterator<std::string>{}};
@@ -46,7 +50,8 @@ struct InputSchema_128 {
   }
 };
 
-std::vector<char> *generateStaticData() {
+std::vector<char> *generateStaticData()
+{
   std::random_device rd;
   std::mt19937_64 eng(rd());
   std::uniform_int_distribution<long> distr(0, 1000000);
@@ -56,11 +61,14 @@ std::vector<char> *generateStaticData() {
 
   long campaign_id = distr(eng); // 0;
   set.insert(campaign_id);
-  for (unsigned long i = 0; i < 1000; ++i) {
-    if (i > 0 && i % 10 == 0) {
+  for (unsigned long i = 0; i < 1000; ++i)
+  {
+    if (i > 0 && i % 10 == 0)
+    {
       campaign_id = distr(eng); //++;
       bool is_in = set.find(campaign_id) != set.end();
-      while (is_in) {
+      while (is_in)
+      {
         campaign_id = distr(eng);
         is_in = set.find(campaign_id) != set.end();
       }
@@ -71,7 +79,8 @@ std::vector<char> *generateStaticData() {
   return staticData;
 }
 
-std::vector<char> *generateData(long *staticBuf, long campaignKeys) {
+std::vector<char> *generateData(long *staticBuf, long campaignKeys)
+{
   std::random_device rd;
   std::mt19937_64 eng(rd());
   std::uniform_int_distribution<long> distr(0, 1000000);
@@ -83,7 +92,8 @@ std::vector<char> *generateData(long *staticBuf, long campaignKeys) {
   auto user_id = distr(eng);
   auto page_id = distr(eng);
   unsigned long idx = 0;
-  while (idx < len / sizeof(InputSchema_128)) {
+  while (idx < len / sizeof(InputSchema_128))
+  {
     auto ad_id = staticBuf[((idx % 100000) % campaignKeys) * 2];
     auto ad_type = (idx % 100000) % 5;
     auto event_type = (idx % 100000) % 3;
@@ -112,21 +122,26 @@ std::vector<char> *generateData(long *staticBuf, long campaignKeys) {
   return data;
 };
 
-void updateTimeStamps(InputSchema_128 *input, int count, long offset) {
-  for (int i = 0; i < count; ++i) {
+void updateTimeStamps(InputSchema_128 *input, int count, long offset)
+{
+  for (int i = 0; i < count; ++i)
+  {
     input[i].timestamp += offset;
   }
 }
 
-struct CounterVal {
+struct CounterVal
+{
   long _1;
   long _2;
 };
 
-std::shared_ptr<HashTable<long, long>> loadStaticJoinTable() {
+std::shared_ptr<HashTable<long, long>> loadStaticJoinTable()
+{
   auto *dataPtr = reinterpret_cast<long *>(StaticJoinData->data());
   auto table = std::make_shared<HashTable<long, long>>(2048);
-  for (int i = 0; i < 1000; ++i) {
+  for (int i = 0; i < 1000; ++i)
+  {
     table->insert(dataPtr[i * 2], dataPtr[i * 2 + 1], 0);
   }
   return table;
@@ -134,16 +149,19 @@ std::shared_ptr<HashTable<long, long>> loadStaticJoinTable() {
 
 template <typename KeyT, typename ValueT, typename HashT, typename EqT,
           typename AggrT>
-class HashTableInitializer {
+class HashTableInitializer
+{
 public:
-  void operator()(HashTable<KeyT, ValueT, HashT, EqT, AggrT> *element) {
+  void operator()(HashTable<KeyT, ValueT, HashT, EqT, AggrT> *element)
+  {
     element->clear();
   }
 };
 
 template <typename KeyT, typename ValueT, typename HashT, typename EqT,
           typename AggrT>
-class HashTableReleaser {
+class HashTableReleaser
+{
 public:
   void operator()(HashTable<KeyT, ValueT, HashT, EqT, AggrT> *) {}
 };
@@ -157,31 +175,38 @@ class HashTablePool
     : public StackObjectPool<
           HashTable<KeyT, ValueT, HashT, EqT, AggrT>, HASH_TABLE_POOL_SIZE,
           HashTableInitializer<KeyT, ValueT, HashT, EqT, AggrT>,
-          HashTableReleaser<KeyT, ValueT, HashT, EqT, AggrT>> {};
+          HashTableReleaser<KeyT, ValueT, HashT, EqT, AggrT>>
+{
+};
 
-struct Task {
+struct Task
+{
   int segment;
   long window;
   std::vector<char> *data;
   semaphore done;
 };
 
-struct ResultBuilder {
+struct ResultBuilder
+{
 private:
-  struct ResultSegment {
+  struct ResultSegment
+  {
     HashTable<long, CounterVal> *result;
     HashTablePool<long, CounterVal> *pool;
   };
 
-  struct ResultBundle {
+  struct ResultBundle
+  {
     ResultBundle()
-        : counter(0), segments(SegmentCount), canBeOutputed(false),
-          canBeClaimed(true) {}
-    bool canBeClaimed;
+        : canBeOutputed(false), window(-1), counter(0), segments(SegmentCount),
+          canBeClaimed(1) {}
+    //bool canBeClaimed;
     bool canBeOutputed;
     long window;
     boost::atomic_int counter;
     std::vector<ResultSegment> segments;
+    semaphore canBeClaimed;
   };
 
   std::vector<ResultBundle> bundles =
@@ -191,21 +216,33 @@ private:
 
 public:
   void AddResult(const Task &task, HashTable<long, CounterVal> *result,
-                 HashTablePool<long, CounterVal> *pool) {
+                 HashTablePool<long, CounterVal> *pool)
+  {
     auto &bundle = bundles[task.window % bundles.size()];
-    while (bundle.window != task.window) {
-      assert(bundle.canBeClaimed);
+    while (bundle.window != task.window)
+    {
+      bundle.canBeClaimed.down();
+      if (bundle.window == task.window)
+      {
+        break;
+      }
+
+      assert(bundle.window < task.window);
+      //assert(bundle.canBeClaimed);
       auto segmentsCounter =
           bundle.counter.exchange(SegmentCount, boost::memory_order_relaxed);
-      if (segmentsCounter == 0) {
-        if (debug) {
-          for (auto &resultSegment : bundle.segments) {
+      assert(segmentsCounter == 0);
+      if (segmentsCounter == 0)
+      {
+        if (debug)
+        {
+          for (auto &resultSegment : bundle.segments)
+          {
             resultSegment.result = nullptr;
             resultSegment.pool = nullptr;
           }
         }
         bundle.window = task.window;
-        bundle.canBeClaimed = false;
         bundle.canBeOutputed = false;
       }
     }
@@ -214,17 +251,23 @@ public:
 
     auto segmentsMissing =
         bundle.counter.fetch_add(-1, boost::memory_order_relaxed);
-    if (segmentsMissing == 1) {
+    if (segmentsMissing == 1)
+    {
       bundle.canBeOutputed = true;
-      if (outputLock.try_lock()) {
-        while (bundles[currentOutputWindowId % bundles.size()].canBeOutputed) {
+      if (outputLock.try_lock())
+      {
+        while (bundles[currentOutputWindowId % bundles.size()].canBeOutputed)
+        {
           auto &bundle = bundles[currentOutputWindowId % bundles.size()];
-          assert(!bundle.canBeClaimed);
-          for (unsigned int i = 0; i < SegmentCount; ++i) {
+          assert(!bundle.canBeClaimed.try_down());
+          for (unsigned int i = 0; i < SegmentCount; ++i)
+          {
             auto table = bundle.segments[i].result;
-            for (int j = 0; j < table->getNumberOfBuckets(); ++j) {
+            for (int j = 0; j < table->getNumberOfBuckets(); ++j)
+            {
               auto bucket = table->getBuckets()[j];
-              if (bucket.state) {
+              if (bucket.state)
+              {
                 *(long *)outputBuf = bucket.key;
                 *(long *)outputBuf = bucket.value._1;
               }
@@ -232,7 +275,7 @@ public:
             bundle.segments[i].pool->release(table);
           }
           bundle.canBeOutputed = false;
-          bundle.canBeClaimed = true;
+          bundle.canBeClaimed.up();
           currentOutputWindowId++;
         }
         outputLock.unlock();
@@ -245,28 +288,33 @@ public:
 
 ResultBuilder resultThread;
 
-struct GeneratorThread {
+struct GeneratorThread
+{
 private:
   static const int TaskCount = 100;
   std::mutex mtx;
-  semaphore tasksAvailable;
   Task tasks[TaskCount];
   boost::atomic_int taskCounter{};
 
 public:
+  semaphore tasksAvailable;
   GeneratorThread() : tasksAvailable() {}
-  Task &getTask() {
-    tasksAvailable.down();
+  Task &getTask()
+  {
+    //tasksAvailable.down();
     auto taskId = taskCounter.fetch_add(1, boost::memory_order_relaxed);
+    updateTask(taskId);
     return tasks[taskId % TaskCount];
   }
 
   void markTaskDone(Task &task) { task.done.up(); }
 
-  void runGenerator() {
+  void runGenerator()
+  {
     numa_run_on_node(NUMA_NODE);
     numa_set_preferred(NUMA_NODE);
-    for (int i = 0; i < TaskCount; ++i) {
+    for (int i = 0; i < TaskCount; ++i)
+    {
 
       auto &task = tasks[i % TaskCount];
       task.window = i / SegmentCount;
@@ -274,28 +322,30 @@ public:
       task.data = generateData((long *)StaticJoinData->data() +
                                    (1000 / SegmentCount * (i % SegmentCount)),
                                1000 / SegmentCount);
-      tasksAvailable.up();
     }
+    tasksAvailable.up();
     std::cout << "generated all data" << std::endl;
-    auto currentTaskId = TaskCount;
-    while (true) {
-      tasks[currentTaskId % TaskCount].done.down();
-      updateTask(currentTaskId);
-      currentTaskId++;
-    }
+    //    auto currentTaskId = TaskCount;
+    //    while (true) {
+    //      tasks[currentTaskId % TaskCount].done.down();
+    //      updateTask(currentTaskId);
+    //      currentTaskId++;
+    //    }
   }
 
-  void updateTask(int taskId) {
+  void updateTask(int taskId)
+  {
     auto &task = tasks[taskId % TaskCount];
     task.window = taskId / SegmentCount;
     task.segment = taskId % SegmentCount;
     // updateTimeStamps((InputSchema_128 *)task.data->data(), TUPLE_COUNT,
     // TUPLE_COUNT);
-    tasksAvailable.up();
+    //tasksAvailable.up();
   }
 };
 
-struct WorkerThread {
+struct WorkerThread
+{
   std::shared_ptr<HashTable<long, long>> StaticJoinTable;
   HashTable<long, CounterVal> *CurrentCountMap{};
   std::vector<char> *GeneratedData{};
@@ -308,20 +358,25 @@ struct WorkerThread {
 
                               };
 
-  void RunWorker() {
-    numa_set_preferred(NUMA_NODE);
+  void RunWorker()
+  {
+    auto node = ThreadNumber / 8;
+    numa_set_preferred(node);
     std::cout << "thread " << ThreadNumber << " starting" << std::endl;
     auto nodeCpuMask = numa_allocate_cpumask();
-    numa_node_to_cpus(NUMA_NODE, nodeCpuMask);
-    if (numa_bitmask_weight(nodeCpuMask) < ThreadCount) {
-      std::cout << "too many threads for one numa node!" << std::endl;
-      return;
-    }
-    auto skipCPUs = ThreadNumber + 1;
-    for (unsigned int i = 0; i < sizeof(cpu_set_t) * 8; ++i) {
-      if (numa_bitmask_isbitset(nodeCpuMask, i)) {
+    numa_node_to_cpus(node, nodeCpuMask);
+    //    if (numa_bitmask_weight(nodeCpuMask) < ThreadCount) {
+    //      std::cout << "too many threads for one numa node!" << std::endl;
+    //      return;
+    //    }
+    auto skipCPUs = (ThreadNumber % 8) + 1;
+    for (unsigned int i = 0; i < sizeof(cpu_set_t) * 8; ++i)
+    {
+      if (numa_bitmask_isbitset(nodeCpuMask, i))
+      {
         skipCPUs--;
-        if (skipCPUs == 0) {
+        if (skipCPUs == 0)
+        {
           numa_bitmask_clearall(nodeCpuMask);
           numa_bitmask_setbit(nodeCpuMask, i);
           std::cout << "thread " << ThreadNumber << " bound to core " << i << std::endl;
@@ -331,22 +386,27 @@ struct WorkerThread {
     }
     StaticJoinTable = loadStaticJoinTable();
     CurrentCountMap = TablePool.acquire();
-    while (true) {
+    while (true)
+    {
       auto &task = Generator->getTask();
       process(task, TUPLE_COUNT);
       Generator->markTaskDone(task);
     }
   }
 
-  void process(const Task &task, const int len) {
+  void process(const Task &task, const int len)
+  {
     auto input = reinterpret_cast<const InputSchema_128 *>(task.data->data());
-    for (int i = 0; i < len; ++i) {
-      if (input[i].event_type != 0) {
+    for (int i = 0; i < len; ++i)
+    {
+      if (input[i].event_type != 0)
+      {
         continue;
       }
       long campaignId = 0;
       auto foundId = StaticJoinTable->get_value(input[i].ad_id, campaignId);
-      if (!foundId) {
+      if (!foundId)
+      {
         continue;
       }
       CounterVal curVal{1, input[i].timestamp};
@@ -355,36 +415,75 @@ struct WorkerThread {
     output(task);
   }
 
-  void output(const Task &task) {
+  void output(const Task &task)
+  {
     resultThread.AddResult(task, CurrentCountMap, &TablePool);
     CurrentCountMap = TablePool.acquire();
   }
 };
+void parse_args(int argc, const char **argv)
+{
+  namespace po = boost::program_options;
+  po::options_description desc("Allowed options");
+  desc.add_options()("help", "produce help message")("thread-count", po::value<int>(), "")("run-length", po::value<int>(), "seconds before exiting");
+  po::variables_map vm;
+  po::store(po::parse_command_line(argc, argv, desc), vm);
+  po::notify(vm);
 
-int main() {
+  if (vm.count("help"))
+  {
+    std::cout << desc << "\n";
+    std::exit(1);
+  }
+
+  if (vm.count("thread-count"))
+  {
+    ThreadCount = vm["thread-count"].as<int>();
+  }
+  std::cout << "Number of threads set to "
+            << ThreadCount << ".\n";
+  if (vm.count("run-length"))
+  {
+    RunLength = vm["run-length"].as<int>();
+    std::cout << "Running experiment for "
+              << RunLength << ".\n";
+  }
+}
+int main(int argc, const char **argv)
+{
   numa_set_bind_policy(1);
   numa_set_preferred(NUMA_NODE);
+  parse_args(argc, argv);
   std::vector<std::shared_ptr<WorkerThread>> workers;
-  std::cout << "numa available " << numa_available() << std::endl;
-  std::cout << "numa_max_node " << numa_max_node() << std::endl;
   StaticJoinData = generateStaticData();
   boost::thread_group generatorThreads;
   auto generator = std::make_shared<GeneratorThread>();
   auto generatorThread = generatorThreads.create_thread(
       boost::bind(&GeneratorThread::runGenerator, generator));
   pthread_setname_np(generatorThread->native_handle(), "Generator");
+  generator->tasksAvailable.down();
   boost::thread_group workerThreads;
-  for (unsigned int i = 0; i < ThreadCount; ++i) {
+  for (unsigned int i = 0; i < ThreadCount; ++i)
+  {
     auto worker = std::make_shared<WorkerThread>(i, generator);
     workers.push_back(worker);
     auto thread = workerThreads.create_thread(
         boost::bind(&WorkerThread::RunWorker, worker));
     pthread_setname_np(thread->native_handle(), "Worker");
   }
-  while (true) {
-    boost::this_thread::sleep_for(boost::chrono::seconds(2));
+  auto reportTime = RunLength <= 0 ? 2 : RunLength;
+  boost::this_thread::sleep_for(boost::chrono::seconds(2));
+  DataCounter.exchange(0, boost::memory_order_relaxed);
+  while (true)
+  {
+    boost::this_thread::sleep_for(boost::chrono::seconds(reportTime));
     long throughput = DataCounter.exchange(0, boost::memory_order_relaxed);
-    std::cout << "throughput: " << throughput / 2 << std::endl;
+    std::cout << "throughput: " << throughput / reportTime << std::endl;
+    if (RunLength > 0)
+    {
+      exit(0);
+    }
   }
+
   return 0;
 }
