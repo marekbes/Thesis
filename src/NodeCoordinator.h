@@ -25,6 +25,22 @@ class NodeCoordinator {
                      NumaAlloc<std::pair<const long, ResultGroup>>>
       parts;
 
+  struct ResultMarker {
+    long windowId;
+    long batchId;
+
+    bool operator<(const ResultMarker &rhs) const {
+      return batchId < rhs.batchId;
+    }
+    bool operator>(const ResultMarker &rhs) const {
+      return batchId > rhs.batchId;
+    }
+  };
+  std::priority_queue<ResultMarker,
+                      std::vector<ResultMarker, NumaAlloc<ResultMarker>>,
+                      std::greater<>>
+      MarkerQueue;
+
 public:
   explicit NodeCoordinator(int numaNode, void *data);
   NodeComm &GetComm();
@@ -36,7 +52,8 @@ public:
 private:
   void OutputResult(TaskResult &result);
   void ProcessSegment(PassSegmentJob &segment);
-  void MergeResults(TaskResult &a, const TaskResult &b);
+  static void MergeResults(TaskResult &a, const TaskResult &b);
+  void MergeAndOutput(ResultGroup &group);
 };
 
 #endif // PROOFOFCONCEPT_NODECOORDINATOR_H

@@ -4,8 +4,8 @@
 #include "TaskResult.h"
 #include <set>
 struct ResultGroup {
-  std::set<TaskResult> results;
-  void addResult(TaskResult&);
+  std::vector<TaskResult> results;
+  void addResult(TaskResult&&);
   bool isComplete();
 };
 

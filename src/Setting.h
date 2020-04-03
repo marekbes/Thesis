@@ -11,10 +11,11 @@ public:
   static const unsigned long BATCH_COUNT = 1024 * 16;
   // Batch size in bytes
   static const unsigned long BATCH_SIZE = BATCH_COUNT * sizeof(InputSchema);
-  static const unsigned long DATA_COUNT = 100000;
+  static const unsigned long DATA_COUNT = 5000;
   static long PAGE_SIZE;
   static int NODES_USED;
   static boost::atomic_int64_t DataCounter;
+  static const std::string DATA_PATH;
 };
 
 #endif // PROOFOFCONCEPT_SETTING_H

@@ -24,6 +24,7 @@ public:
   constexpr NumaAlloc(const int node) noexcept : node(node) {};
 
   [[nodiscard]] T *allocate(const size_t num) const {
+
     auto ret = numa_alloc_onnode(num * sizeof(T), node);
     if (!ret)
       throw std::bad_alloc();

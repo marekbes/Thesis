@@ -7,74 +7,17 @@
 #include <boost/bind.hpp>
 #include <boost/program_options.hpp>
 #include <boost/thread.hpp>
+#include <fstream>
 #include <iostream>
 #include <numa.h>
 #include <random>
 #include <unordered_set>
 
-#define TUPLE_COUNT 1024 * 2
 #define MAIN_ON_NODE 2
-std::vector<char> *StaticJoinData;
 unsigned int ThreadsPerNode = 1;
 unsigned int ThreadCount = 2;
 unsigned int RunLength = 0;
 unsigned int SegmentCount = 1;
-
-std::vector<long> generateStaticData() {
-  std::random_device rd;
-  std::mt19937_64 eng(rd());
-  std::uniform_int_distribution<long> distr(0, 1000000);
-  std::unordered_set<long> set;
-  auto staticData = std::vector<long>(2 * sizeof(long) * 1024);
-  auto staticBuf = staticData.data();
-
-  long campaign_id = distr(eng); // 0;
-  set.insert(campaign_id);
-  for (long i = 0; i < 1000; ++i) {
-    if (i > 0 && i % 10 == 0) {
-      campaign_id = distr(eng); //++;
-      bool is_in = set.find(campaign_id) != set.end();
-      while (is_in) {
-        campaign_id = distr(eng);
-        is_in = set.find(campaign_id) != set.end();
-      }
-    }
-    staticBuf[i * 2] = i;
-    staticBuf[i * 2 + 1] = (long)campaign_id;
-  }
-  return staticData;
-}
-
-void generateData(void *data, long offset, long nodes,
-                  const std::vector<long> staticBuf, long campaignKeys,
-                  int len) {
-  std::random_device rd;
-  std::mt19937_64 eng(rd());
-  std::uniform_int_distribution<long> distr(0, 1000000);
-  auto buf = (InputSchema *)data;
-
-  std::string line;
-  auto user_id = distr(eng);
-  auto page_id = distr(eng);
-  int pos = 0;
-  for (int i = 0; i < len; i += Setting::BATCH_COUNT * nodes) {
-    long idx = i + offset;
-    while (idx < Setting::BATCH_SIZE * nodes) {
-      auto ad_id = staticBuf[((idx % 100000) % campaignKeys) * 2];
-      auto ad_type = (idx % 100000) % 5;
-      auto event_type = (idx % 100000) % 3;
-      buf[pos].timestamp = idx;
-      buf[pos].user_id = user_id;
-      buf[pos].page_id = page_id;
-      buf[pos].ad_id = ad_id;
-      buf[pos].ad_type = ad_type;
-      buf[pos].event_type = event_type;
-      buf[pos].ip_address = -1;
-      pos++;
-      idx++;
-    }
-  }
-}
 
 void parse_args(int argc, const char **argv) {
   namespace po = boost::program_options;
@@ -101,9 +44,38 @@ void parse_args(int argc, const char **argv) {
   }
 }
 
+std::vector<long> loadStaticData(int nodeCount) {
+  std::ifstream file(Setting::DATA_PATH + "input_" + std::to_string(nodeCount) +
+                         ".dat", std::ifstream::binary);
+  if (file.fail()) {
+    throw std::invalid_argument("missing input data");
+  }
+  std::vector<long> data;
+  unsigned int len = 0;
+  file.read((char *)&len, sizeof(len));
+  data.resize(len);
+  if (len > 0)
+    file.read((char *)&data[0], len * sizeof(long));
+  return data;
+}
+
+void *loadData(int node, int nodeCount) {
+  std::ifstream file(Setting::DATA_PATH + "input_" + std::to_string(node) +
+                         "_" + std::to_string(nodeCount) + ".dat",
+                     std::ifstream::ate | std::ifstream::binary);
+  if (file.fail()) {
+    throw std::invalid_argument("missing input data");
+  }
+  auto size = file.tellg();
+  file.seekg(0);
+  auto data = numa_alloc_onnode(size, node);
+  file.read(static_cast<char *>(data), size);
+  return data;
+}
+
 int main(int argc, const char **argv) {
   assert(Setting::BATCH_SIZE % Setting::PAGE_SIZE == 0);
-  //  numa_set_bind_policy(1);
+  numa_set_bind_policy(1);
   numa_set_preferred(MAIN_ON_NODE);
   auto fromNodes = numa_parse_nodestring("0-3");
   auto toNodes = numa_parse_nodestring("2");
@@ -118,13 +90,10 @@ int main(int argc, const char **argv) {
   auto NodesUsed = 1 + ((ThreadCount - 1) / ThreadsPerNode);
   Setting::NODES_USED = NodesUsed;
   auto ThreadsToAllocate = ThreadCount;
-  auto staticData = generateStaticData();
+  auto staticData = loadStaticData(NodesUsed);
   for (size_t i = 0; i < NodesUsed; i++) {
     numa_set_preferred(i);
-    auto dataBuf =
-        numa_alloc_onnode(Setting::BATCH_SIZE * Setting::DATA_COUNT, i);
-    generateData(dataBuf, i * Setting::BATCH_COUNT, NodesUsed, staticData, 1000,
-                 Setting::BATCH_COUNT * Setting::DATA_COUNT);
+    auto dataBuf = loadData(i, NodesUsed);
     int status[1];
     long ret_code;
     status[0] = -1;
@@ -163,9 +132,8 @@ int main(int argc, const char **argv) {
     boost::this_thread::sleep_for(boost::chrono::seconds(reportTime));
     long throughput =
         Setting::DataCounter.exchange(0, boost::memory_order_relaxed);
-    std::cout << "throughput: "
-              << (double)throughput / reportTime / 1000000000 << "GB/s"
-              << std::endl;
+    std::cout << "throughput: " << (double)throughput / reportTime / 1000000000
+              << "GB/s" << std::endl;
     if (RunLength > 0) {
       exit(0);
     }

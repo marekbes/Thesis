@@ -30,11 +30,14 @@ struct TaskResult {
                   std::function<void(HashTable<long, CounterVal> *)>>
       result;
   long batchId;
-  [[nodiscard]] bool isComplete() const { return startingWindow && endingWindow; }
+  [[nodiscard]] bool isComplete() const {
+    return startingWindow && endingWindow;
+  }
 #ifdef POC_DEBUG
-  long startPos;
-  long endPos;
+  uint64_t startPos;
+  uint64_t endPos;
 #endif
-};
 
+  friend std::ostream & operator << (std::ostream &out, const TaskResult &tr);
+};
 #endif // PROOFOFCONCEPT_TASKRESULT_H
