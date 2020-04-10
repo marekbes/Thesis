@@ -1,6 +1,7 @@
 #ifndef PROOFOFCONCEPT_JOB_H
 #define PROOFOFCONCEPT_JOB_H
 #include "QueryTask.h"
+#include "ResultGroup.h"
 #include "TaskResult.h"
 #include <variant>
 
@@ -16,6 +17,13 @@ struct PassSegmentJob {
   friend std::ostream &operator<<(std::ostream &out, const PassSegmentJob &j);
 };
 
-using Job = std::variant<PassSegmentJob, QueryTask>;
+struct MergeAndOutputJob {
+  explicit MergeAndOutputJob(ResultGroup &&group);
+  ResultGroup group;
+
+  friend std::ostream &operator<<(std::ostream &out, const MergeAndOutputJob &j);
+};
+
+using Job = std::variant<int, PassSegmentJob, QueryTask, MergeAndOutputJob>;
 
 #endif // PROOFOFCONCEPT_JOB_H

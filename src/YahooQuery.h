@@ -17,7 +17,7 @@ class YahooQuery {
 public:
   explicit YahooQuery(const std::vector<long> &staticJoinData);
   void process(const QueryTask &task);
-  void SetOutputCb(std::function<void(TaskResult)> outputCb);
+  void SetOutputCb(std::function<void(TaskResult&&)> outputCb);
   static void merge(TaskResult &a, const TaskResult &b);
 };
 

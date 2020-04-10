@@ -1,6 +1,7 @@
 #include "NodeCoordinator.h"
 #include "Setting.h"
 #include "YahooQuery.h"
+#include <sstream>
 #include <utility>
 
 template <class... Ts> struct overload : Ts... { using Ts::operator()...; };
@@ -9,32 +10,34 @@ template <class... Ts> overload(Ts...)->overload<Ts...>;
 NodeCoordinator::NodeCoordinator(int numaNode, void *data)
     : NumaNode(numaNode), InputBuf(data), BatchCounter(0), NodeComms(numaNode),
       parts(NumaAlloc<>(numaNode)),
-      MarkerQueue(std::greater<>(), NumaAlloc(numaNode)) {}
+      MarkerQueue(std::greater<>(), NumaAlloc(numaNode)),
+      MarkerSet(std::less<>(), NumaAlloc(numaNode)) {}
 
 int NodeCoordinator::GetNode() { return NumaNode; }
 
-void NodeCoordinator::ProcessLocalResult(TaskResult result) {
+void NodeCoordinator::ProcessLocalResult(TaskResult &&result) {
+#ifdef POC_DEBUG_POSITION
+  assert(result.batchId <= result.windowId * 2);
+  assert(result.endPos - result.startPos <= 9999);
+#endif
   NodeComms.UpdateClock(result.batchId);
   auto destination = result.windowId % Setting::NODES_USED;
   NodeComms.SendJob(PassSegmentJob(std::move(result)), destination);
-  while (!MarkerQueue.empty() &&
-         NodeComms.AllGreaterThan(MarkerQueue.top().batchId)) {
-    if (!parts[MarkerQueue.top().windowId].results.empty()) {
-      MergeAndOutput(parts[MarkerQueue.top().windowId]);
-    }
-    MarkerQueue.pop();
-  }
 }
 
 void NodeCoordinator::ProcessSegment(PassSegmentJob &segment) {
+  std::lock_guard<std::mutex> guard(parts_mutex);
   auto &group = parts[segment.result.windowId];
   group.addResult(std::move(segment.result));
-  if (NodeComms.AllGreaterThan(segment.result.batchId + 4)) {
-    MergeAndOutput(group);
-  } else {
-    MarkerQueue.push(
-        ResultMarker{segment.result.windowId, segment.result.batchId + 4});
-  }
+  MarkerQueue.push(
+      ResultMarker{segment.result.windowId, segment.result.batchId + 1});
+#ifdef POC_DEBUG
+  std::stringstream stream;
+  stream << "Stored results for windowId: " << segment.result.windowId
+         << " total results: " << parts[segment.result.windowId].results.size()
+         << std::endl;
+  std::cout << stream.str();
+#endif
 }
 
 void NodeCoordinator::MergeAndOutput(ResultGroup &group) {
@@ -43,32 +46,44 @@ void NodeCoordinator::MergeAndOutput(ResultGroup &group) {
     MergeResults(result, group.results[i]);
   }
   OutputResult(result);
-  parts.erase(result.windowId);
 }
 
 void NodeCoordinator::MergeResults(TaskResult &a, const TaskResult &b) {
   assert(std::abs(a.batchId - b.batchId) == 1);
   assert(a.windowId == b.windowId);
+#ifdef POC_DEBUG
+  std::stringstream stream;
+  stream << "Merging windowId: " << a.windowId << " " << a.startPos << " - "
+         << a.endPos << " (" << a.endPos - a.startPos << ")" << std::endl;
+  std::cout << stream.str();
+#endif
   YahooQuery::merge(a, b);
   a.batchId = std::max(a.batchId, b.batchId);
-#ifdef POC_DEBUG
+#ifdef POC_DEBUG_POSITION
   a.startPos = std::min(a.startPos, b.startPos);
-  a.endPos = std::min(a.endPos, b.endPos);
+  a.endPos = std::max(a.endPos, b.endPos);
 #endif
 }
 
 void NodeCoordinator::ProcessJob(Job &job) {
   std::visit(
-      overload{[this](PassSegmentJob &segment) { ProcessSegment(segment); },
-               [](QueryTask &) { throw std::exception(); }},
+      overload{
+          [this](PassSegmentJob &segment) { ProcessSegment(segment); },
+          [this](MergeAndOutputJob &segment) { MergeAndOutput(segment.group); },
+          [](int &) {}, [](QueryTask &) { throw std::exception(); }},
       job);
 }
 
-void NodeCoordinator::OutputResult(TaskResult &result) {
+void NodeCoordinator::OutputResult(const TaskResult &result) {
+#ifdef POC_DEBUG_POSITION
+  // assert(result.endPos - result.startPos == 9999);
+#endif
 #ifdef POC_DEBUG
-  std::cout << "Outputting window " << result.windowId << " " << result.startPos
-            << " - " << result.endPos << " (" << result.endPos - result.startPos
-            << ")" << std::endl;
+  std::stringstream stream;
+  stream << "Outputting windowId: " << result.windowId << " " << result.startPos
+         << " - " << result.endPos << " (" << result.endPos - result.startPos
+         << ")" << std::endl;
+  std::cout << stream.str();
 #endif
   auto &table = result.result;
   for (size_t j = 0; j < table->getNumberOfBuckets(); ++j) {
@@ -81,20 +96,50 @@ void NodeCoordinator::OutputResult(TaskResult &result) {
 }
 
 [[nodiscard]] Job NodeCoordinator::GetJob() {
+  // Try to deque job
   auto job = NodeComms.TryGetJob();
   if (job) {
+
+#ifdef POC_DEBUG
+    std::stringstream stream;
+    stream << "Node " << NumaNode << " Receiving job " << job.value()
+           << std::endl;
+    std::cout << stream.str();
+#endif
     return std::move(job.value());
   }
+
+  // Try to create merge+output job
+  {
+    std::unique_lock<std::mutex> lock(parts_mutex);
+    if (lock.owns_lock()) {
+
+      if (!MarkerQueue.empty() &&
+          NodeComms.AllGreaterThan(MarkerQueue.top().batchId)) {
+        auto iter = parts.find(MarkerQueue.top().windowId);
+        MarkerQueue.pop();
+        if (iter != parts.end()) {
+          auto j = MergeAndOutputJob(std::move(iter->second));
+          parts.erase(iter->first);
+          return std::move(j);
+        }
+      }
+    }
+  }
+
+  // Process next batch -> assuming it is going to be processed and throughput
+  // can count it as such
   Setting::DataCounter.fetch_add(Setting::BATCH_SIZE,
-                        boost::memory_order_relaxed);
+                                 boost::memory_order_relaxed);
   auto batch = BatchCounter.fetch_add(1, boost::memory_order_relaxed);
   auto id = batch * Setting::NODES_USED + GetNode();
   return QueryTask{
       id,
       (char *)InputBuf + (batch % Setting::DATA_COUNT) * Setting::BATCH_SIZE,
       Setting::BATCH_COUNT,
-      static_cast<long>(batch / Setting::DATA_COUNT)
-#ifdef POC_DEBUG
+      static_cast<long>((batch / Setting::DATA_COUNT) * Setting::NODES_USED *
+                        Setting::DATA_COUNT * Setting::BATCH_COUNT / 10000)
+#ifdef POC_DEBUG_POSITION
           ,
       id * Setting::BATCH_COUNT,
       (id + 1) * Setting::BATCH_COUNT - 1

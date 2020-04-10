@@ -1,7 +1,3 @@
-//
-// Created by mb4416 on 15/02/2020.
-//
-
 #ifndef PROOFOFCONCEPT_HASHTABLEPOOL_H
 #define PROOFOFCONCEPT_HASHTABLEPOOL_H
 #include "HashTable.h"
@@ -27,7 +23,7 @@ public:
   void operator()(HashTable<KeyT, ValueT, HashT, EqT, AggrT> *) {}
 };
 
-#define HASH_TABLE_POOL_SIZE 1000
+#define HASH_TABLE_POOL_SIZE 400
 
 template <typename KeyT, typename ValueT, typename HashT = std::hash<KeyT>,
     typename EqT = HashMapEqualTo<KeyT>,

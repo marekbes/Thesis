@@ -40,17 +40,18 @@ class NodeCoordinator {
                       std::vector<ResultMarker, NumaAlloc<ResultMarker>>,
                       std::greater<>>
       MarkerQueue;
+  std::set<long, std::less<>, NumaAlloc<long>> MarkerSet;
 
 public:
   explicit NodeCoordinator(int numaNode, void *data);
   NodeComm &GetComm();
   int GetNode();
   Job GetJob();
-  void ProcessLocalResult(TaskResult result);
+  void ProcessLocalResult(TaskResult &&result);
   void ProcessJob(Job &job);
 
 private:
-  void OutputResult(TaskResult &result);
+  void OutputResult(const TaskResult &result);
   void ProcessSegment(PassSegmentJob &segment);
   static void MergeResults(TaskResult &a, const TaskResult &b);
   void MergeAndOutput(ResultGroup &group);

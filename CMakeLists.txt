@@ -19,6 +19,9 @@ set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
 find_package(Boost 1.63.0 COMPONENTS filesystem regex program_options iostreams thread)
 
+FIND_LIBRARY(tbb NAMES libtbb.so)
+target_link_libraries(proofOfConcept PRIVATE tbb)
+
 message(INFO ${Boost_LIBRARIES})
 
 include_directories(${Boost_INCLUDE_DIRS})
@@ -26,3 +29,4 @@ target_link_libraries(proofOfConcept PRIVATE
         numa
         ${Boost_LIBRARIES})
 #add_compile_definitions(POC_DEBUG)
+#add_compile_definitions(POC_DEBUG_POSITION)

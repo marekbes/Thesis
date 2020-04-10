@@ -1,46 +1,94 @@
-//
-// Created by mb4416 on 26/03/2020.
-//
-
 #include "NodeComm.h"
 #include "Setting.h"
 #include <iostream>
+#include <sstream>
+
 NodeComm::NodeComm(int numaNode)
     : NumaNode(numaNode), queue(NumaAlloc<Job>(numaNode)),
-      allComms(NumaAlloc<Job>(numaNode)) {}
+      allComms(NumaAlloc<Job>(numaNode)),
+      markedAsComplete(NumaAlloc(numaNode)) {
+  for (size_t i = 0; i < 4; ++i) {
+    vectorClock[i] = 0;
+  }
+  vectorClock[numaNode] = numaNode;
+}
 
 void NodeComm::initComms(const std::vector<NodeComm *> &comms) {
   this->allComms.assign(comms.begin(), comms.end());
-  for (size_t i = 0; i < comms.size(); ++i) {
-    vectorClock[i] = 0;
-  }
 }
 
 void NodeComm::SendJob(Job &&job, int destinationNode) {
-  //std::cout << job << " " << NumaNode << " -> " << destinationNode << std::endl;
+#ifdef POC_DEBUG
+  std::stringstream stream;
+  stream << "sending " << job << " " << std::dec << NumaNode << " -> "
+         << destinationNode << std::endl;
+  std::cout << stream.str();
+#endif
   if (destinationNode == NEXT_NODE) {
     destinationNode = (NumaNode + 1) % Setting::NODES_USED;
   }
   std::lock_guard<std::mutex> guard(allComms[destinationNode]->queue_mutex);
-  allComms[destinationNode]->queue.push_front(
-      Message(std::move(job), vectorClock));
+  uint32_t clock[4] = {vectorClock[0], vectorClock[1], vectorClock[2],
+                       vectorClock[3]};
+  allComms[destinationNode]->queue.push(Message(std::move(job), clock));
 }
+
 std::optional<Job> NodeComm::TryGetJob() {
-  std::lock_guard<std::mutex> guard(queue_mutex);
-  if (queue.empty()) {
+  Message msg;
+  if (!queue.try_pop(msg)) {
     return {};
   }
-  auto message = std::move(queue.back());
   for (int i = 0; i < 4; ++i) {
-    vectorClock[i] = std::max(vectorClock[i], message.vectorClock[i]);
+    SetClock(i, msg.vectorClock[i]);
   }
-  queue.pop_back();
-  return std::move(message.job);
+#ifdef POC_DEBUG
+  std::stringstream stream;
+  stream << "Node " << NumaNode << " sees [" << vectorClock[0] << ","
+         << vectorClock[1] << "," << vectorClock[2] << "," << vectorClock[3]
+         << "]" << std::endl;
+  std::cout << stream.str();
+#endif
+  return std::move(msg.job);
+}
+
+void NodeComm::SetClock(int node, uint32_t newValue) {
+  auto value = static_cast<uint32_t>(vectorClock[node]);
+  while (value < newValue) {
+    vectorClock[node].compare_exchange_weak(value, newValue,
+                                      std::memory_order_relaxed);
+  }
 }
 
 void NodeComm::UpdateClock(uint32_t latestBatch) {
-  std::lock_guard<std::mutex> guard(queue_mutex);
-  vectorClock[NumaNode] = latestBatch;
+  auto &localClock = vectorClock[NumaNode];
+  uint32_t clockSnap = localClock;
+  if (clockSnap >= latestBatch) {
+    return;
+  }
+
+  if (clockSnap + Setting::NODES_USED == latestBatch) {
+    while (clockSnap + Setting::NODES_USED == latestBatch) {
+      localClock.compare_exchange_weak(clockSnap, latestBatch);
+    }
+    clockSnap = localClock;
+    while (true) {
+      uint32_t popped;
+      if (markedAsComplete.try_pop(popped)) {
+        if (clockSnap + Setting::NODES_USED < popped) {
+          markedAsComplete.push(popped);
+          break;
+        }
+        while (clockSnap + Setting::NODES_USED == popped) {
+          localClock.compare_exchange_weak(clockSnap, popped);
+        }
+        clockSnap = localClock;
+      } else {
+        break;
+      }
+    }
+  } else {
+    markedAsComplete.push(latestBatch);
+  }
 }
 
 bool NodeComm::AllGreaterThan(uint32_t batchId) {
@@ -55,3 +103,4 @@ bool NodeComm::AllGreaterThan(uint32_t batchId) {
 NodeComm::Message::Message(Job &&j, uint32_t clock[4]) : job(std::move(j)) {
   std::copy(clock, clock + 4, vectorClock);
 }
+NodeComm::Message::Message() : job() {}

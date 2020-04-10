@@ -14,7 +14,7 @@ class Executor {
 public:
   Executor(NodeCoordinator *coordinator, int threadNumber, YahooQuery* query);
 
-   void RunWorker();
+   void RunWorker(volatile bool &startRunning);
 };
 
 #endif // PROOFOFCONCEPT_EXECUTOR_H

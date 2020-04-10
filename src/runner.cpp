@@ -1,7 +1,5 @@
 #include "Executor.h"
 #include "NodeCoordinator.h"
-#include "ObjectPool.h"
-#include "Semaphore.h"
 #include "Setting.h"
 #include <algorithm>
 #include <boost/bind.hpp>
@@ -14,10 +12,10 @@
 #include <unordered_set>
 
 #define MAIN_ON_NODE 2
-unsigned int ThreadsPerNode = 1;
-unsigned int ThreadCount = 2;
+unsigned int NodesUsed = 2;
+unsigned int ThreadsPerNode = 8;
+unsigned int ThreadCount = NodesUsed * ThreadsPerNode;
 unsigned int RunLength = 0;
-unsigned int SegmentCount = 1;
 
 void parse_args(int argc, const char **argv) {
   namespace po = boost::program_options;
@@ -46,7 +44,8 @@ void parse_args(int argc, const char **argv) {
 
 std::vector<long> loadStaticData(int nodeCount) {
   std::ifstream file(Setting::DATA_PATH + "input_" + std::to_string(nodeCount) +
-                         ".dat", std::ifstream::binary);
+                         ".dat",
+                     std::ifstream::binary);
   if (file.fail()) {
     throw std::invalid_argument("missing input data");
   }
@@ -68,6 +67,7 @@ void *loadData(int node, int nodeCount) {
   }
   auto size = file.tellg();
   file.seekg(0);
+  assert(size >= static_cast<long>(Setting::DATA_COUNT * Setting::BATCH_SIZE));
   auto data = numa_alloc_onnode(size, node);
   file.read(static_cast<char *>(data), size);
   return data;
@@ -118,11 +118,13 @@ int main(int argc, const char **argv) {
   numa_set_preferred(MAIN_ON_NODE);
 
   boost::thread_group workerThreads;
+  bool startRunning = false;
   for (unsigned int i = 0; i < ThreadCount; ++i) {
     auto thread = workerThreads.create_thread(
-        boost::bind(&Executor::RunWorker, workers[i]));
+        [i, &workers, &startRunning]() { workers[i]->RunWorker(startRunning); });
     pthread_setname_np(thread->native_handle(), "Worker");
   }
+  startRunning = true;
 
   // Report throughput
   auto reportTime = RunLength <= 0 ? 2 : RunLength;

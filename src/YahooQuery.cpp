@@ -1,6 +1,7 @@
 #include "YahooQuery.h"
 
 #include "Setting.h"
+#include <sstream>
 #include <utility>
 
 YahooQuery::YahooQuery(const std::vector<long> &staticJoinData)
@@ -14,19 +15,20 @@ YahooQuery::YahooQuery(const std::vector<long> &staticJoinData)
 void YahooQuery::process(const QueryTask &task) {
   bool startingWindow = false;
   auto countMap = TablePool.acquire();
+
   auto input = reinterpret_cast<const InputSchema *>(task.data);
   auto lastWindowId = input[0].timestamp / 10000 + task.windowOffset;
-#ifdef POC_DEBUG
+#ifdef POC_DEBUG_POSITION
   auto lastOutputPos = task.startPos;
 #endif
   for (int i = 0; i < task.size; ++i) {
     auto windowId = input[i].timestamp / 10000 + task.windowOffset;
     if (windowId != lastWindowId) {
 
-#ifdef POC_DEBUG
+#ifdef POC_DEBUG_POSITION
       this->OutputCb(TaskResult{lastWindowId, startingWindow, true, 0,
                                 std::move(countMap), task.batchId,
-                                lastOutputPos, lastOutputPos + i - 1});
+                                lastOutputPos, task.startPos + i - 1});
       lastOutputPos = task.startPos + i;
 #else
       this->OutputCb(TaskResult{lastWindowId, startingWindow, true, 0,
@@ -34,6 +36,11 @@ void YahooQuery::process(const QueryTask &task) {
 #endif
       startingWindow = true;
       countMap = this->TablePool.acquire();
+#ifdef POC_DEBUG
+      std::stringstream stream;
+      stream << "Map " << countMap.get() << "for batch " << std::dec << task.batchId << std::endl;
+      std::cout << stream.str();
+#endif
       lastWindowId = windowId;
     }
     if (input[i].event_type != 0) {
@@ -49,7 +56,7 @@ void YahooQuery::process(const QueryTask &task) {
   }
   this->OutputCb(TaskResult{lastWindowId, startingWindow, false, 0,
                             std::move(countMap), task.batchId
-#ifdef POC_DEBUG
+#ifdef POC_DEBUG_POSITION
                             ,
                             lastOutputPos, task.endPos
 #endif
@@ -68,6 +75,6 @@ void YahooQuery::merge(TaskResult &a, const TaskResult &b) {
   a.endingWindow |= b.endingWindow;
 }
 
-void YahooQuery::SetOutputCb(std::function<void(TaskResult)> outputCb) {
+void YahooQuery::SetOutputCb(std::function<void(TaskResult&&)> outputCb) {
   this->OutputCb = std::move(outputCb);
 }

@@ -22,6 +22,7 @@ public:
   template <class U>
   constexpr NumaAlloc(const NumaAlloc<U> &other) noexcept : node(other.GetNode()) {}
   constexpr NumaAlloc(const int node) noexcept : node(node) {};
+  template<typename U> struct rebind { typedef NumaAlloc<U> other;};
 
   [[nodiscard]] T *allocate(const size_t num) const {
 

@@ -3,13 +3,16 @@
 
 #include "Job.h"
 #include "NumaAlloc.h"
+#include <atomic>
 #include <mutex>
 #include <optional>
-#include <queue>
+#include <tbb/concurrent_priority_queue.h>
+#include <tbb/concurrent_queue.h>
 
 class NodeComm {
 private:
   struct Message {
+    Message();
     Message(Job &&job, uint32_t vectorClock[4]);
     Job job;
     uint32_t vectorClock[4]{};
@@ -21,11 +24,15 @@ private:
   };
 
   int NumaNode;
-  std::deque<Message, NumaAlloc<Message>> queue;
+  tbb::concurrent_queue<Message, NumaAlloc<Message>> queue;
   std::vector<NodeComm *, NumaAlloc<NodeComm *>> allComms;
   std::mutex queue_mutex;
-  uint32_t vectorClock[4];
+  std::atomic<uint32_t> vectorClock[4];
+  tbb::concurrent_priority_queue<uint32_t, std::greater<>, NumaAlloc<uint32_t>>
+      markedAsComplete;
+  std::atomic<uint32_t> markTop;
 
+  void SetClock(int node, uint32_t newValue);
 public:
   static const int NEXT_NODE = -1;
   NodeComm(int numaNode);

@@ -33,7 +33,7 @@ struct TaskResult {
   [[nodiscard]] bool isComplete() const {
     return startingWindow && endingWindow;
   }
-#ifdef POC_DEBUG
+#ifdef POC_DEBUG_POSITION
   uint64_t startPos;
   uint64_t endPos;
 #endif
