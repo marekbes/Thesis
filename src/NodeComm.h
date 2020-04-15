@@ -7,13 +7,13 @@
 #include <mutex>
 #include <optional>
 #include <tbb/concurrent_priority_queue.h>
-#include <tbb/concurrent_queue.h>
+#include <queue>
 
 class NodeComm {
 private:
   struct Message {
     Message();
-    Message(Job &&job, uint32_t vectorClock[4]);
+    Message(Job &&job, const uint32_t vectorClock[4]);
     Job job;
     uint32_t vectorClock[4]{};
 
@@ -24,13 +24,12 @@ private:
   };
 
   int NumaNode;
-  tbb::concurrent_queue<Message, NumaAlloc<Message>> queue;
+  std::deque<Message, NumaAlloc<Message>> queue;
   std::vector<NodeComm *, NumaAlloc<NodeComm *>> allComms;
   std::mutex queue_mutex;
-  std::atomic<uint32_t> vectorClock[4];
+  std::atomic<uint32_t> vectorClock[4]{};
   tbb::concurrent_priority_queue<uint32_t, std::greater<>, NumaAlloc<uint32_t>>
       markedAsComplete;
-  std::atomic<uint32_t> markTop;
 
   void SetClock(int node, uint32_t newValue);
 public:

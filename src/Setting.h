@@ -11,6 +11,7 @@ public:
   static const unsigned long BATCH_COUNT = 1024 * 16;
   // Batch size in bytes
   static const unsigned long BATCH_SIZE = BATCH_COUNT * sizeof(InputSchema);
+  // Number of batches of data
   static const unsigned long DATA_COUNT = 1000;
   static long PAGE_SIZE;
   static int NODES_USED;

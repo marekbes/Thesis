@@ -10,6 +10,8 @@
 #include <boost/atomic.hpp>
 #include <hash_fun.h>
 #include <queue>
+#include <tbb/concurrent_priority_queue.h>
+#include <tbb/concurrent_unordered_map.h>
 #include <vector>
 
 class NodeCoordinator {
@@ -18,12 +20,9 @@ class NodeCoordinator {
   volatile void *outputBuf = outputArr;
   void *InputBuf;
   boost::atomic_int BatchCounter;
-  NodeComm NodeComms;
 
-  std::mutex parts_mutex;
-  std::unordered_map<long, ResultGroup, std::hash<long>, std::equal_to<>,
-                     NumaAlloc<std::pair<const long, ResultGroup>>>
-      parts;
+  static const int PARTS_COUNT = 4000;
+  std::vector<ResultGroup, NumaAlloc<ResultGroup>> parts;
 
   struct ResultMarker {
     long windowId;
@@ -36,15 +35,14 @@ class NodeCoordinator {
       return batchId > rhs.batchId;
     }
   };
-  std::priority_queue<ResultMarker,
-                      std::vector<ResultMarker, NumaAlloc<ResultMarker>>,
-                      std::greater<>>
+  tbb::concurrent_priority_queue<ResultMarker, std::greater<>,
+                                 NumaAlloc<ResultMarker>>
       MarkerQueue;
   std::set<long, std::less<>, NumaAlloc<long>> MarkerSet;
 
 public:
+  NodeComm NodeComms;
   explicit NodeCoordinator(int numaNode, void *data);
-  NodeComm &GetComm();
   int GetNode();
   Job GetJob();
   void ProcessLocalResult(TaskResult &&result);
@@ -54,7 +52,8 @@ private:
   void OutputResult(const TaskResult &result);
   void ProcessSegment(PassSegmentJob &segment);
   static void MergeResults(TaskResult &a, const TaskResult &b);
-  void MergeAndOutput(ResultGroup &group);
+  void MergeAndOutput(size_t resultCount,
+                      TaskResult results[ResultGroup::RESULT_COUNT_LIMIT]);
 };
 
 #endif // PROOFOFCONCEPT_NODECOORDINATOR_H

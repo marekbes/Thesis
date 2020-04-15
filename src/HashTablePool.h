@@ -23,16 +23,13 @@ public:
   void operator()(HashTable<KeyT, ValueT, HashT, EqT, AggrT> *) {}
 };
 
-#define HASH_TABLE_POOL_SIZE 400
+#define HASH_TABLE_POOL_SIZE 5000
 
 template <typename KeyT, typename ValueT, typename HashT = std::hash<KeyT>,
     typename EqT = HashMapEqualTo<KeyT>,
     typename AggrT = DummyAggr<ValueT>>
-class HashTablePool
-    : public StackObjectPool<
+using HashTablePool = StackObjectPool<
         HashTable<KeyT, ValueT, HashT, EqT, AggrT>, HASH_TABLE_POOL_SIZE,
 HashTableInitializer<KeyT, ValueT, HashT, EqT, AggrT>,
-HashTableReleaser<KeyT, ValueT, HashT, EqT, AggrT>>
-{
-};
+HashTableReleaser<KeyT, ValueT, HashT, EqT, AggrT>>;
 #endif // PROOFOFCONCEPT_HASHTABLEPOOL_H

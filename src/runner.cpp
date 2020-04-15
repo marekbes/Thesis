@@ -13,7 +13,7 @@
 
 #define MAIN_ON_NODE 2
 unsigned int NodesUsed = 2;
-unsigned int ThreadsPerNode = 8;
+unsigned int ThreadsPerNode = 5;
 unsigned int ThreadCount = NodesUsed * ThreadsPerNode;
 unsigned int RunLength = 0;
 
@@ -108,12 +108,12 @@ int main(int argc, const char **argv) {
                                   new YahooQuery(staticData));
       workers.push_back(worker);
     }
-    comms.push_back(&coordinator->GetComm());
+    comms.push_back(&coordinator->NodeComms);
     ThreadsToAllocate -= ThreadsPerNode;
   }
   for (size_t i = 0; i < NodesUsed; i++) {
     numa_set_preferred(i);
-    coordinators[i]->GetComm().initComms(comms);
+    coordinators[i]->NodeComms.initComms(comms);
   }
   numa_set_preferred(MAIN_ON_NODE);
 

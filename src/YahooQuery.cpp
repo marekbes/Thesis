@@ -17,14 +17,13 @@ void YahooQuery::process(const QueryTask &task) {
   auto countMap = TablePool.acquire();
 
   auto input = reinterpret_cast<const InputSchema *>(task.data);
-  auto lastWindowId = input[0].timestamp / 10000 + task.windowOffset;
+  auto lastWindowId = (input[0].timestamp + task.timestampOffset) / 10000;
 #ifdef POC_DEBUG_POSITION
   auto lastOutputPos = task.startPos;
 #endif
   for (int i = 0; i < task.size; ++i) {
-    auto windowId = input[i].timestamp / 10000 + task.windowOffset;
+    auto windowId = (input[i].timestamp + task.timestampOffset) / 10000;
     if (windowId != lastWindowId) {
-
 #ifdef POC_DEBUG_POSITION
       this->OutputCb(TaskResult{lastWindowId, startingWindow, true, 0,
                                 std::move(countMap), task.batchId,
@@ -38,7 +37,8 @@ void YahooQuery::process(const QueryTask &task) {
       countMap = this->TablePool.acquire();
 #ifdef POC_DEBUG
       std::stringstream stream;
-      stream << "Map " << countMap.get() << "for batch " << std::dec << task.batchId << std::endl;
+      stream << "Map " << countMap.get() << "for batch " << std::dec
+             << task.batchId << std::endl;
       std::cout << stream.str();
 #endif
       lastWindowId = windowId;
@@ -75,6 +75,6 @@ void YahooQuery::merge(TaskResult &a, const TaskResult &b) {
   a.endingWindow |= b.endingWindow;
 }
 
-void YahooQuery::SetOutputCb(std::function<void(TaskResult&&)> outputCb) {
+void YahooQuery::SetOutputCb(std::function<void(TaskResult &&)> outputCb) {
   this->OutputCb = std::move(outputCb);
 }

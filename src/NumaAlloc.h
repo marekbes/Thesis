@@ -18,13 +18,19 @@ public:
   typedef T value_type;
   typedef std::true_type propagate_on_container_move_assignment;
   typedef std::true_type is_always_equal;
+  typedef T* pointer;
+  typedef const T* const_pointer;
+  typedef T& reference;
+  typedef const T& const_reference;
+  typedef size_t size_type;
+  typedef ptrdiff_t difference_type;
 
   template <class U>
   constexpr NumaAlloc(const NumaAlloc<U> &other) noexcept : node(other.GetNode()) {}
   constexpr NumaAlloc(const int node) noexcept : node(node) {};
   template<typename U> struct rebind { typedef NumaAlloc<U> other;};
 
-  [[nodiscard]] T *allocate(const size_t num) const {
+  [[nodiscard]] T *allocate(const size_type num) const {
 
     auto ret = numa_alloc_onnode(num * sizeof(T), node);
     if (!ret)
@@ -32,7 +38,7 @@ public:
     return reinterpret_cast<T *>(ret);
   }
 
-  void deallocate(T *p, size_t num) noexcept { numa_free(p, num * sizeof(T)); }
+  void deallocate(T *p, size_type num) noexcept { numa_free(p, num * sizeof(T)); }
 
   [[nodiscard]] int GetNode() const {
     return node;

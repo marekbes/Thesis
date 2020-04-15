@@ -46,7 +46,10 @@ void Executor::RunWorker(volatile bool &startRunning) {
   while (true) {
     auto job = coordinator->GetJob();
     if (std::holds_alternative<QueryTask>(job)) {
-      query->process(std::get<QueryTask>(job));
+      auto &task = std::get<QueryTask>(job);
+      query->process(task);
+      coordinator->NodeComms.SendJob(MarkBatchComplete(task.batchId),
+                                     coordinator->GetNode());
     } else {
       coordinator->ProcessJob(job);
     }

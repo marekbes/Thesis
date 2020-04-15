@@ -7,7 +7,7 @@ struct QueryTask {
   long batchId;
   char *data;
   int size;
-  long windowOffset;
+  long timestampOffset;
 #ifdef POC_DEBUG_POSITION
   uint64_t startPos;
   uint64_t endPos;

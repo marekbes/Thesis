@@ -7,8 +7,8 @@ NodeComm::NodeComm(int numaNode)
     : NumaNode(numaNode), queue(NumaAlloc<Job>(numaNode)),
       allComms(NumaAlloc<Job>(numaNode)),
       markedAsComplete(NumaAlloc(numaNode)) {
-  for (size_t i = 0; i < 4; ++i) {
-    vectorClock[i] = 0;
+  for (auto &i : vectorClock) {
+    i = 0;
   }
   vectorClock[numaNode] = numaNode;
 }
@@ -18,25 +18,34 @@ void NodeComm::initComms(const std::vector<NodeComm *> &comms) {
 }
 
 void NodeComm::SendJob(Job &&job, int destinationNode) {
+  if (std::holds_alternative<int>(job))
+    throw std::exception();
 #ifdef POC_DEBUG
   std::stringstream stream;
-  stream << "sending " << job << " " << std::dec << NumaNode << " -> "
+  stream << "sending [" << job << "] " << std::dec << NumaNode << " -> "
          << destinationNode << std::endl;
   std::cout << stream.str();
 #endif
   if (destinationNode == NEXT_NODE) {
     destinationNode = (NumaNode + 1) % Setting::NODES_USED;
   }
-  std::lock_guard<std::mutex> guard(allComms[destinationNode]->queue_mutex);
   uint32_t clock[4] = {vectorClock[0], vectorClock[1], vectorClock[2],
                        vectorClock[3]};
-  allComms[destinationNode]->queue.push(Message(std::move(job), clock));
+  std::lock_guard<std::mutex> guard(allComms[destinationNode]->queue_mutex);
+  allComms[destinationNode]->queue.push_front(Message(std::move(job), clock));
 }
 
 std::optional<Job> NodeComm::TryGetJob() {
   Message msg;
-  if (!queue.try_pop(msg)) {
-    return {};
+  {
+    std::lock_guard<std::mutex> guard(queue_mutex);
+    if (queue.empty()) {
+      return {};
+    }
+    msg = std::move(queue.back());
+    queue.pop_back();
+    if (std::holds_alternative<int>(msg.job))
+      throw std::exception();
   }
   for (int i = 0; i < 4; ++i) {
     SetClock(i, msg.vectorClock[i]);
@@ -55,7 +64,7 @@ void NodeComm::SetClock(int node, uint32_t newValue) {
   auto value = static_cast<uint32_t>(vectorClock[node]);
   while (value < newValue) {
     vectorClock[node].compare_exchange_weak(value, newValue,
-                                      std::memory_order_relaxed);
+                                            std::memory_order_relaxed);
   }
 }
 
@@ -100,7 +109,8 @@ bool NodeComm::AllGreaterThan(uint32_t batchId) {
   return true;
 }
 
-NodeComm::Message::Message(Job &&j, uint32_t clock[4]) : job(std::move(j)) {
+NodeComm::Message::Message(Job &&j, const uint32_t clock[4])
+    : job(std::move(j)) {
   std::copy(clock, clock + 4, vectorClock);
 }
 NodeComm::Message::Message() : job() {}

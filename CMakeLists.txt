@@ -18,15 +18,19 @@ set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
 find_package(Boost 1.63.0 COMPONENTS filesystem regex program_options iostreams thread)
-
-FIND_LIBRARY(tbb NAMES libtbb.so)
-target_link_libraries(proofOfConcept PRIVATE tbb)
-
-message(INFO ${Boost_LIBRARIES})
-
 include_directories(${Boost_INCLUDE_DIRS})
+
+
+include(/home/mb4416/tbb/cmake/TBBConfig.cmake)
+find_package(TBB REQUIRED)
+include_directories(${TBB_INCLUDE_DIRS})
+
+target_link_libraries(proofOfConcept PRIVATE tbb)
+INCLUDE_DIRECTORIES(/home/mb4416/tbb/include)
+
 target_link_libraries(proofOfConcept PRIVATE
         numa
+        ${TBB_LIBRARIES}
         ${Boost_LIBRARIES})
 #add_compile_definitions(POC_DEBUG)
 #add_compile_definitions(POC_DEBUG_POSITION)
