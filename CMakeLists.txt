@@ -24,6 +24,7 @@ include_directories(${Boost_INCLUDE_DIRS})
 include(/home/mb4416/tbb/cmake/TBBConfig.cmake)
 find_package(TBB REQUIRED)
 include_directories(${TBB_INCLUDE_DIRS})
+include_directories(src/concurrentqueue)
 
 target_link_libraries(proofOfConcept PRIVATE tbb)
 INCLUDE_DIRECTORIES(/home/mb4416/tbb/include)

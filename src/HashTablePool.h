@@ -23,7 +23,7 @@ public:
   void operator()(HashTable<KeyT, ValueT, HashT, EqT, AggrT> *) {}
 };
 
-#define HASH_TABLE_POOL_SIZE 5000
+#define HASH_TABLE_POOL_SIZE 10000
 
 template <typename KeyT, typename ValueT, typename HashT = std::hash<KeyT>,
     typename EqT = HashMapEqualTo<KeyT>,

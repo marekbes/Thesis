@@ -4,13 +4,30 @@
 #include "Job.h"
 #include "NumaAlloc.h"
 #include <atomic>
+#include <blockingconcurrentqueue.h>
 #include <mutex>
 #include <optional>
-#include <tbb/concurrent_priority_queue.h>
 #include <queue>
+#include <tbb/concurrent_priority_queue.h>
+
+class NodeCoordinator;
 
 class NodeComm {
 private:
+  struct NumaQueueTraits : public moodycamel::ConcurrentQueueDefaultTraits {
+    constexpr static const NumaAlloc<char> allocator = NumaAlloc<char>(0);
+
+    static inline void *malloc(size_t size) {
+      auto data = allocator.allocate(size + sizeof(size_t));
+      *(size_t *)data = size + sizeof(size_t);
+      return data + sizeof(size_t);
+    }
+    static inline void free(void *ptr) {
+      auto size = ((size_t *)(ptr))[-1];
+      return allocator.deallocate((char *)ptr, size);
+    }
+  };
+
   struct Message {
     Message();
     Message(Job &&job, const uint32_t vectorClock[4]);
@@ -24,7 +41,8 @@ private:
   };
 
   int NumaNode;
-  std::deque<Message, NumaAlloc<Message>> queue;
+  NodeCoordinator &coordinator;
+  moodycamel::BlockingConcurrentQueue<Message, NumaQueueTraits> queue;
   std::vector<NodeComm *, NumaAlloc<NodeComm *>> allComms;
   std::mutex queue_mutex;
   std::atomic<uint32_t> vectorClock[4]{};
@@ -32,9 +50,10 @@ private:
       markedAsComplete;
 
   void SetClock(int node, uint32_t newValue);
+
 public:
   static const int NEXT_NODE = -1;
-  NodeComm(int numaNode);
+  NodeComm(int numaNode, NodeCoordinator &coordinator);
   void SendJob(Job &&job, int destinationNode = NEXT_NODE);
   std::optional<Job> TryGetJob();
   void initComms(const std::vector<NodeComm *> &allComms);

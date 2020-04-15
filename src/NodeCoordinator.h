@@ -21,7 +21,7 @@ class NodeCoordinator {
   void *InputBuf;
   boost::atomic_int BatchCounter;
 
-  static const int PARTS_COUNT = 4000;
+  static const int PARTS_COUNT = 8000;
   std::vector<ResultGroup, NumaAlloc<ResultGroup>> parts;
 
   struct ResultMarker {

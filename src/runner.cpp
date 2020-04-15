@@ -2,7 +2,6 @@
 #include "NodeCoordinator.h"
 #include "Setting.h"
 #include <algorithm>
-#include <boost/bind.hpp>
 #include <boost/program_options.hpp>
 #include <boost/thread.hpp>
 #include <fstream>

@@ -3,8 +3,8 @@
 #include <iostream>
 #include <sstream>
 
-NodeComm::NodeComm(int numaNode)
-    : NumaNode(numaNode), queue(NumaAlloc<Job>(numaNode)),
+NodeComm::NodeComm(int numaNode, NodeCoordinator &coordinator)
+    : NumaNode(numaNode), coordinator(coordinator), queue(100, 32, 32),
       allComms(NumaAlloc<Job>(numaNode)),
       markedAsComplete(NumaAlloc(numaNode)) {
   for (auto &i : vectorClock) {
@@ -31,19 +31,16 @@ void NodeComm::SendJob(Job &&job, int destinationNode) {
   }
   uint32_t clock[4] = {vectorClock[0], vectorClock[1], vectorClock[2],
                        vectorClock[3]};
-  std::lock_guard<std::mutex> guard(allComms[destinationNode]->queue_mutex);
-  allComms[destinationNode]->queue.push_front(Message(std::move(job), clock));
+
+  allComms[destinationNode]->queue.try_enqueue(Message(std::move(job), clock));
 }
 
 std::optional<Job> NodeComm::TryGetJob() {
   Message msg;
   {
-    std::lock_guard<std::mutex> guard(queue_mutex);
-    if (queue.empty()) {
+    if (!queue.try_dequeue(msg)) {
       return {};
     }
-    msg = std::move(queue.back());
-    queue.pop_back();
     if (std::holds_alternative<int>(msg.job))
       throw std::exception();
   }

@@ -38,7 +38,7 @@ public:
     return reinterpret_cast<T *>(ret);
   }
 
-  void deallocate(T *p, size_type num) noexcept { numa_free(p, num * sizeof(T)); }
+  void deallocate(T *p, const size_type num) const noexcept { numa_free(p, num * sizeof(T)); }
 
   [[nodiscard]] int GetNode() const {
     return node;

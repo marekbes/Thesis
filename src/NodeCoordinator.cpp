@@ -11,7 +11,7 @@ NodeCoordinator::NodeCoordinator(int numaNode, void *data)
     : NumaNode(numaNode), InputBuf(data), BatchCounter(0),
       parts(PARTS_COUNT, NumaAlloc<>(numaNode)),
       MarkerQueue(NumaAlloc(numaNode)),
-      MarkerSet(std::less<>(), NumaAlloc(numaNode)), NodeComms(numaNode) {
+      MarkerSet(std::less<>(), NumaAlloc(numaNode)), NodeComms(numaNode, *this) {
   for (int i = 0; i < PARTS_COUNT; ++i) {
     parts[i].windowId = -1;
   }
