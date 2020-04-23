@@ -11,8 +11,8 @@
 #include <unordered_set>
 
 #define MAIN_ON_NODE 2
-unsigned int NodesUsed = 2;
-unsigned int ThreadsPerNode = 5;
+unsigned int NodesUsed = 4;
+unsigned int ThreadsPerNode = 8;
 unsigned int ThreadCount = NodesUsed * ThreadsPerNode;
 unsigned int RunLength = 0;
 
@@ -20,8 +20,9 @@ void parse_args(int argc, const char **argv) {
   namespace po = boost::program_options;
   po::options_description desc("Allowed options");
   desc.add_options()("help", "produce help message")(
-      "thread-count", po::value<int>(), "")("run-length", po::value<int>(),
-                                            "seconds before exiting");
+      "thread-count", po::value<int>(), "number of threads per node")(
+      "run-length", po::value<int>(),
+      "seconds before exiting")("nodes", po::value<int>(), "NUMA nodes used");
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
   po::notify(vm);
@@ -31,10 +32,16 @@ void parse_args(int argc, const char **argv) {
     std::exit(1);
   }
 
-  if (vm.count("thread-count")) {
-    ThreadCount = vm["thread-count"].as<int>();
+  if (vm.count("nodes")) {
+    NodesUsed = vm["nodes"].as<int>();
   }
-  std::cout << "Number of threads set to " << ThreadCount << ".\n";
+  std::cout << "Number of nodes set to " << ThreadCount << ".\n";
+  if (vm.count("thread-count")) {
+    ThreadsPerNode = vm["thread-count"].as<int>();
+  }
+  ThreadCount = NodesUsed * ThreadsPerNode;
+  std::cout << "Number of threads per node set to " << ThreadsPerNode << ".\n";
+  std::cout << "Total number of threads set to " << ThreadCount << ".\n";
   if (vm.count("run-length")) {
     RunLength = vm["run-length"].as<int>();
     std::cout << "Running experiment for " << RunLength << ".\n";
@@ -119,8 +126,9 @@ int main(int argc, const char **argv) {
   boost::thread_group workerThreads;
   bool startRunning = false;
   for (unsigned int i = 0; i < ThreadCount; ++i) {
-    auto thread = workerThreads.create_thread(
-        [i, &workers, &startRunning]() { workers[i]->RunWorker(startRunning); });
+    auto thread = workerThreads.create_thread([i, &workers, &startRunning]() {
+      workers[i]->RunWorker(startRunning);
+    });
     pthread_setname_np(thread->native_handle(), "Worker");
   }
   startRunning = true;

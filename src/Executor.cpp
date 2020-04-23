@@ -41,8 +41,9 @@ void Executor::RunWorker(volatile bool &startRunning) {
       }
     }
   }
-  query->SetOutputCb(std::bind(&NodeCoordinator::ProcessLocalResult,
-                               coordinator, std::placeholders::_1));
+  query->SetOutputCb([this](TaskResult &&tr) {
+    this->coordinator->ProcessLocalResult(std::move(tr));
+  });
   while (true) {
     auto job = coordinator->GetJob();
     if (std::holds_alternative<QueryTask>(job)) {

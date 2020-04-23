@@ -35,7 +35,7 @@ void NodeCoordinator::ProcessSegment(PassSegmentJob &segment) {
   long snappedWindowId = group.windowId;
   if (snappedWindowId != windowId) {
     snappedWindowId = -1;
-    assert(group.windowId.compare_exchange_weak(snappedWindowId, windowId));
+    assert(group.windowId.compare_exchange_weak(snappedWindowId, windowId) || snappedWindowId == windowId);
   }
   auto position = group.resultCount.fetch_add(1);
   assert(position < ResultGroup::RESULT_COUNT_LIMIT);
@@ -118,19 +118,6 @@ void NodeCoordinator::OutputResult(const TaskResult &result) {
 }
 
 [[nodiscard]] Job NodeCoordinator::GetJob() {
-  // Try to deque job
-  auto job = NodeComms.TryGetJob();
-  if (job) {
-
-#ifdef POC_DEBUG
-    std::stringstream stream;
-    stream << "Node " << NumaNode << " Receiving job " << job.value()
-           << std::endl;
-    std::cout << stream.str();
-#endif
-    return std::move(job.value());
-  }
-
   // Try to create merge+output job
   {
     ResultMarker marker{};
@@ -141,7 +128,7 @@ void NodeCoordinator::OutputResult(const TaskResult &result) {
              << " windowId: " << marker.windowId << std::endl;
       std::cout << stream.str();
 #endif
-      if (NodeComms.AllGreaterThan(marker.batchId + 100)) {
+      if (NodeComms.AllGreaterThan(marker.batchId + 50)) {
         auto windowId = marker.windowId;
         auto &group = parts[(windowId / Setting::NODES_USED) % PARTS_COUNT];
         if (group.windowId.compare_exchange_weak(windowId, -2)) {
@@ -177,22 +164,33 @@ void NodeCoordinator::OutputResult(const TaskResult &result) {
     }
   }
 
-  // Process next batch -> assuming it is going to be processed and throughput
-  // can count it as such
+  // Process next batch
+  auto batch = BatchCounter.fetch_add(1, boost::memory_order_relaxed);
+  auto batchId = batch * Setting::NODES_USED + GetNode();
+
+  // Spin while too ahead
+
+  while(NodeComms.LowestClock() + 300 < batchId)
+  {
+
+  }
+
+
+  // Assuming it is going to be processed and throughput can count it as such
   Setting::DataCounter.fetch_add(Setting::BATCH_SIZE,
                                  boost::memory_order_relaxed);
-  auto batch = BatchCounter.fetch_add(1, boost::memory_order_relaxed);
-  auto id = batch * Setting::NODES_USED + GetNode();
+
+
   return QueryTask{
-      id,
+      batchId,
       (char *)InputBuf + (batch % Setting::DATA_COUNT) * Setting::BATCH_SIZE,
       Setting::BATCH_COUNT,
       static_cast<long>((batch / Setting::DATA_COUNT) * Setting::DATA_COUNT *
                         Setting::BATCH_COUNT * Setting::NODES_USED)
 #ifdef POC_DEBUG_POSITION
           ,
-      id * Setting::BATCH_COUNT,
-      (id + 1) * Setting::BATCH_COUNT - 1
+      batchId * Setting::BATCH_COUNT,
+      (batchId + 1) * Setting::BATCH_COUNT - 1
 #endif
   };
 }

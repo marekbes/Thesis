@@ -12,7 +12,7 @@ class YahooQuery {
 
   HashTable<long, long> StaticJoinTable;
   HashTablePool<long, CounterVal> TablePool;
-  std::function<void(TaskResult)> OutputCb;
+  std::function<void(TaskResult&&)> OutputCb;
 
 public:
   explicit YahooQuery(const std::vector<long> &staticJoinData);

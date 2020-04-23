@@ -42,7 +42,6 @@ private:
 
   int NumaNode;
   NodeCoordinator &coordinator;
-  moodycamel::BlockingConcurrentQueue<Message, NumaQueueTraits> queue;
   std::vector<NodeComm *, NumaAlloc<NodeComm *>> allComms;
   std::mutex queue_mutex;
   std::atomic<uint32_t> vectorClock[4]{};
@@ -59,6 +58,7 @@ public:
   void initComms(const std::vector<NodeComm *> &allComms);
   void UpdateClock(uint32_t i);
   bool AllGreaterThan(uint32_t batchId);
+  int LowestClock();
 };
 
 #endif // PROOFOFCONCEPT_NODECOMM_H

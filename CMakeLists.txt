@@ -35,3 +35,4 @@ target_link_libraries(proofOfConcept PRIVATE
         ${Boost_LIBRARIES})
 #add_compile_definitions(POC_DEBUG)
 #add_compile_definitions(POC_DEBUG_POSITION)
+#add_compile_definitions(POC_DEBUG_COMM)
