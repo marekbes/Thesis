@@ -44,15 +44,19 @@ void Executor::RunWorker(volatile bool &startRunning) {
   query->SetOutputCb([this](TaskResult &&tr) {
     this->coordinator->ProcessLocalResult(std::move(tr));
   });
+  auto lastWindowId = 0;
   while (true) {
-    auto job = coordinator->GetJob();
-    if (std::holds_alternative<QueryTask>(job)) {
-      auto &task = std::get<QueryTask>(job);
-      query->process(task);
-      coordinator->NodeComms.SendJob(MarkBatchComplete(task.batchId),
-                                     coordinator->GetNode());
-    } else {
-      coordinator->ProcessJob(job);
+    auto task = coordinator->GetJob();
+    auto input = reinterpret_cast<const InputSchema *>(task.data);
+    auto windowId = (input[0].timestamp + task.timestampOffset) / 10000;
+    if(windowId > lastWindowId)
+    {
+      for (; lastWindowId < windowId; ++lastWindowId) {
+        coordinator->markWindowDone(lastWindowId);
+      }
     }
+    query->process(task);
+    //coordinator->NodeComms.SendJob(MarkBatchComplete(task.batchId),
+    //                               coordinator->GetNode());
   }
 }

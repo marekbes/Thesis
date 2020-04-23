@@ -6,48 +6,63 @@
 
 template <class... Ts> struct overload : Ts... { using Ts::operator()...; };
 template <class... Ts> overload(Ts...)->overload<Ts...>;
+ResultGroup NodeCoordinator::parts[PARTS_COUNT];
 
 NodeCoordinator::NodeCoordinator(int numaNode, void *data)
     : NumaNode(numaNode), InputBuf(data), BatchCounter(0),
-      parts(PARTS_COUNT, NumaAlloc<>(numaNode)),
-      MarkerQueue(NumaAlloc(numaNode)),
-      MarkerSet(std::less<>(), NumaAlloc(numaNode)), NodeComms(numaNode, *this) {
-  for (int i = 0; i < PARTS_COUNT; ++i) {
-    parts[i].windowId = -1;
+      coordinators(NumaAlloc<NodeCoordinator *>(numaNode)),
+      NodeComms(numaNode, *this) {
+  for (auto &part : parts) {
+    part.windowId = -1;
   }
 }
 
 int NodeCoordinator::GetNode() { return NumaNode; }
+
+void inline MarkGroupWithWindowId(ResultGroup &group, long windowId) {
+  while (group.windowId != windowId) {
+    assert(group.windowId <= windowId);
+    long snappedWindowId = -1;
+    if(group.windowId.compare_exchange_strong(snappedWindowId, windowId))
+    {
+      break;
+    }
+  }
+}
 
 void NodeCoordinator::ProcessLocalResult(TaskResult &&result) {
 #ifdef POC_DEBUG_POSITION
   assert(result.batchId <= result.windowId * 2);
   assert(result.endPos - result.startPos <= 9999);
 #endif
-  auto destination = result.windowId % Setting::NODES_USED;
-  NodeComms.SendJob(PassSegmentJob(std::move(result)), destination);
-}
-
-void NodeCoordinator::ProcessSegment(PassSegmentJob &segment) {
-  auto &group =
-      parts[(segment.result.windowId / Setting::NODES_USED) % PARTS_COUNT];
-  auto windowId = segment.result.windowId;
-  long snappedWindowId = group.windowId;
-  if (snappedWindowId != windowId) {
-    snappedWindowId = -1;
-    assert(group.windowId.compare_exchange_weak(snappedWindowId, windowId) || snappedWindowId == windowId);
-  }
+  auto &group = parts[(result.windowId) % PARTS_COUNT];
+  MarkGroupWithWindowId(group, result.windowId);
   auto position = group.resultCount.fetch_add(1);
   assert(position < ResultGroup::RESULT_COUNT_LIMIT);
-  group.results[position] = std::move(segment.result);
-  MarkerQueue.push(
-      ResultMarker{segment.result.windowId, segment.result.batchId});
+  group.results[position] = std::move(result);
+}
+
+void NodeCoordinator::markWindowDone(long windowId) {
+  auto &group = parts[windowId % PARTS_COUNT];
+  MarkGroupWithWindowId(group, windowId);
+  auto preIncrement = group.threadSeenCounter.fetch_add(1);
 #ifdef POC_DEBUG
   std::stringstream stream;
-  stream << "Stored results for windowId: " << segment.result.windowId
-         << " total results: " << position + 1 << std::endl;
+  stream << "Marking windowId: " << windowId
+         << " new count: " << preIncrement + 1 << std::endl;
   std::cout << stream.str();
 #endif
+  if (preIncrement + 1 == Setting::THREADS_USED) {
+    assert(group.windowId.compare_exchange_strong(windowId, -2));
+    this->MergeAndOutput(group.resultCount, group.results);
+    group.reset();
+#ifdef POC_DEBUG
+    std::stringstream stream;
+  stream << "Reset windowId: " << windowId
+         << " new count: " << group.threadSeenCounter << std::endl;
+  std::cout << stream.str();
+#endif
+  }
 }
 
 void NodeCoordinator::MergeAndOutput(
@@ -79,20 +94,6 @@ void NodeCoordinator::MergeResults(TaskResult &a, const TaskResult &b) {
 #endif
 }
 
-void NodeCoordinator::ProcessJob(Job &job) {
-  std::visit(
-      overload{[this](PassSegmentJob &segment) { ProcessSegment(segment); },
-               [this](MergeAndOutputJob &segment) {
-                 MergeAndOutput(segment.resultCount, segment.results);
-               },
-               [this](MarkBatchComplete &markBatch) {
-                 NodeComms.UpdateClock(markBatch.batchId);
-               },
-               [](int &) { throw std::exception(); },
-               [](QueryTask &) { throw std::exception(); }},
-      job);
-}
-
 void NodeCoordinator::OutputResult(const TaskResult &result) {
 #ifdef POC_DEBUG_POSITION
   assert(result.endPos - result.startPos == 9999);
@@ -107,79 +108,36 @@ void NodeCoordinator::OutputResult(const TaskResult &result) {
          << std::endl;
   std::cout << stream.str();
 #endif
-  auto &table = result.result;
-  for (size_t j = 0; j < table->getNumberOfBuckets(); ++j) {
-    auto bucket = table->getBuckets()[j];
-    if (bucket.state) {
-      *(long *)outputBuf = bucket.key;
-      *(long *)outputBuf = bucket.value._1;
-    }
-  }
+//  auto &table = result.result;
+//  for (size_t j = 0; j < table->getNumberOfBuckets(); ++j) {
+//    auto bucket = table->getBuckets()[j];
+//    if (bucket.state) {
+//      *(long *)outputBuf = bucket.key;
+//      *(long *)outputBuf = bucket.value._1;
+//    }
+//  }
 }
 
-[[nodiscard]] Job NodeCoordinator::GetJob() {
-  // Try to create merge+output job
-  {
-    ResultMarker marker{};
-    if (MarkerQueue.try_pop(marker)) {
-#ifdef POC_DEBUG
-      std::stringstream stream;
-      stream << "Node " << NumaNode << " popped batchId: " << marker.batchId
-             << " windowId: " << marker.windowId << std::endl;
-      std::cout << stream.str();
-#endif
-      if (NodeComms.AllGreaterThan(marker.batchId + 50)) {
-        auto windowId = marker.windowId;
-        auto &group = parts[(windowId / Setting::NODES_USED) % PARTS_COUNT];
-        if (group.windowId.compare_exchange_weak(windowId, -2)) {
-          auto j = MergeAndOutputJob(group.resultCount, group.results);
-#ifdef POC_DEBUG
-          for (int i = 0; i < group.resultCount; ++i) {
-            assert(group.results[i].result.get() == nullptr);
-          }
-#endif
-          group.resultCount = 0;
-          group.windowId = -1;
-          return std::move(j);
-        } else {
-#ifdef POC_DEBUG
-          std::stringstream stream;
-          stream << "Node " << NumaNode
-                 << " discarding batchId: " << marker.batchId
-                 << " windowId: " << marker.windowId << " new value "
-                 << windowId << std::endl;
-          std::cout << stream.str();
-#endif
-        }
-      } else {
-#ifdef POC_DEBUG
-        std::stringstream stream;
-        stream << "Node " << NumaNode
-               << " returning batchId: " << marker.batchId
-               << " windowId: " << marker.windowId << std::endl;
-        std::cout << stream.str();
-#endif
-        MarkerQueue.push(marker);
-      }
-    }
-  }
+[[nodiscard]] QueryTask NodeCoordinator::GetJob() {
 
   // Process next batch
   auto batch = BatchCounter.fetch_add(1, boost::memory_order_relaxed);
   auto batchId = batch * Setting::NODES_USED + GetNode();
 
-  // Spin while too ahead
-
-  while(NodeComms.LowestClock() + 300 < batchId)
-  {
-
+  // Wait until not too far ahead
+  while (true) {
+    int lowest = batch;
+    for (auto &coordinator : coordinators) {
+      lowest = std::min(lowest, static_cast<int>(coordinator->BatchCounter));
+    }
+    if (batch - lowest < 10) {
+      break;
+    }
   }
-
 
   // Assuming it is going to be processed and throughput can count it as such
   Setting::DataCounter.fetch_add(Setting::BATCH_SIZE,
                                  boost::memory_order_relaxed);
-
 
   return QueryTask{
       batchId,
@@ -193,4 +151,8 @@ void NodeCoordinator::OutputResult(const TaskResult &result) {
       (batchId + 1) * Setting::BATCH_COUNT - 1
 #endif
   };
+}
+void NodeCoordinator::SetCoordinators(
+    std::vector<NodeCoordinator *> coordinatorList) {
+  this->coordinators.assign(coordinatorList.begin(), coordinatorList.end());
 }

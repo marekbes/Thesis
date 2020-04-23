@@ -15,6 +15,7 @@ public:
   static const unsigned long DATA_COUNT = 1000;
   static long PAGE_SIZE;
   static int NODES_USED;
+  static int THREADS_USED;
   static boost::atomic_int64_t DataCounter;
   static const std::string DATA_PATH;
 };

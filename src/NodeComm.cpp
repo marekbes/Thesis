@@ -28,8 +28,6 @@ void NodeComm::SendJob(Job &&job, int destinationNode) {
   if (destinationNode == NEXT_NODE) {
     destinationNode = (NumaNode + 1) % Setting::NODES_USED;
   }
-
-  allComms[destinationNode]->coordinator.ProcessJob(job);
   for (int i = 0; i < 4; ++i) {
     if (i != destinationNode) {
       allComms[destinationNode]->SetClock(i, vectorClock[i]);

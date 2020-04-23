@@ -11,7 +11,7 @@
 #include <unordered_set>
 
 #define MAIN_ON_NODE 2
-unsigned int NodesUsed = 4;
+unsigned int NodesUsed = 2;
 unsigned int ThreadsPerNode = 8;
 unsigned int ThreadCount = NodesUsed * ThreadsPerNode;
 unsigned int RunLength = 0;
@@ -35,7 +35,7 @@ void parse_args(int argc, const char **argv) {
   if (vm.count("nodes")) {
     NodesUsed = vm["nodes"].as<int>();
   }
-  std::cout << "Number of nodes set to " << ThreadCount << ".\n";
+  std::cout << "Number of nodes set to " << NodesUsed << ".\n";
   if (vm.count("thread-count")) {
     ThreadsPerNode = vm["thread-count"].as<int>();
   }
@@ -95,6 +95,7 @@ int main(int argc, const char **argv) {
   std::vector<NodeComm *> comms;
   auto NodesUsed = 1 + ((ThreadCount - 1) / ThreadsPerNode);
   Setting::NODES_USED = NodesUsed;
+  Setting::THREADS_USED = ThreadCount;
   auto ThreadsToAllocate = ThreadCount;
   auto staticData = loadStaticData(NodesUsed);
   for (size_t i = 0; i < NodesUsed; i++) {
@@ -119,6 +120,7 @@ int main(int argc, const char **argv) {
   }
   for (size_t i = 0; i < NodesUsed; i++) {
     numa_set_preferred(i);
+    coordinators[i]->SetCoordinators(coordinators);
     coordinators[i]->NodeComms.initComms(comms);
   }
   numa_set_preferred(MAIN_ON_NODE);

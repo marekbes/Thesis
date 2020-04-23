@@ -12,6 +12,9 @@ struct ResultGroup {
   TaskResult results[RESULT_COUNT_LIMIT];
   std::atomic<long> windowId;
   std::atomic<long> resultCount;
+  std::atomic<long> threadSeenCounter;
+
+  void reset();
 
   friend std::ostream &operator<<(std::ostream &out, const ResultGroup &j);
 };

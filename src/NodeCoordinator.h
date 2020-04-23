@@ -20,40 +20,24 @@ class NodeCoordinator {
   volatile void *outputBuf = outputArr;
   void *InputBuf;
   boost::atomic_int BatchCounter;
+  std::vector<NodeCoordinator *, NumaAlloc<NodeCoordinator *>> coordinators;
 
-  static const int PARTS_COUNT = 1000;
-  std::vector<ResultGroup, NumaAlloc<ResultGroup>> parts;
-
-  struct ResultMarker {
-    long windowId;
-    long batchId;
-
-    bool operator<(const ResultMarker &rhs) const {
-      return batchId < rhs.batchId;
-    }
-    bool operator>(const ResultMarker &rhs) const {
-      return batchId > rhs.batchId;
-    }
-  };
-  tbb::concurrent_priority_queue<ResultMarker, std::greater<>,
-                                 NumaAlloc<ResultMarker>>
-      MarkerQueue;
-  std::set<long, std::less<>, NumaAlloc<long>> MarkerSet;
+  static const int PARTS_COUNT = 200;
+  static ResultGroup parts[PARTS_COUNT];
 
 public:
   NodeComm NodeComms;
   explicit NodeCoordinator(int numaNode, void *data);
   int GetNode();
-  Job GetJob();
+  QueryTask GetJob();
   void ProcessLocalResult(TaskResult &&result);
-  void ProcessJob(Job &job);
+  void markWindowDone(long i);
+  void SetCoordinators(std::vector<NodeCoordinator *> coordinators);
 
 private:
   void OutputResult(const TaskResult &result);
-  void ProcessSegment(PassSegmentJob &segment);
   static void MergeResults(TaskResult &a, const TaskResult &b);
-  void MergeAndOutput(size_t resultCount,
-                      TaskResult results[ResultGroup::RESULT_COUNT_LIMIT]);
+  void MergeAndOutput(size_t resultCount, TaskResult *results);
 };
 
 #endif // PROOFOFCONCEPT_NODECOORDINATOR_H
