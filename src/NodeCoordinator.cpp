@@ -121,19 +121,22 @@ void NodeCoordinator::OutputResult(const TaskResult &result) {
 [[nodiscard]] QueryTask NodeCoordinator::GetJob() {
 
   // Process next batch
-  auto batch = BatchCounter.fetch_add(1, boost::memory_order_relaxed);
-  auto batchId = batch * Setting::NODES_USED + GetNode();
+  int current = BatchCounter;
 
   // Wait until not too far ahead
-  while (true) {
-    int lowest = batch;
-    for (auto &coordinator : coordinators) {
-      lowest = std::min(lowest, static_cast<int>(coordinator->BatchCounter));
-    }
-    if (batch - lowest < 10) {
-      break;
-    }
+  int lowest = current;
+  NodeCoordinator *slowest = nullptr;
+  for (auto coordinator : coordinators) {
+    lowest = std::min(lowest, static_cast<int>(coordinator->BatchCounter));
+    slowest = coordinator;
   }
+  if (current - lowest > 100) {
+    return slowest->GetJob();
+  }
+
+  // Process next batch
+  auto batch = BatchCounter.fetch_add(1, boost::memory_order_relaxed);
+  auto batchId = batch * Setting::NODES_USED + GetNode();
 
   // Assuming it is going to be processed and throughput can count it as such
   Setting::DataCounter.fetch_add(Setting::BATCH_SIZE,

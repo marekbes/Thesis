@@ -11,7 +11,7 @@
 #include <unordered_set>
 
 #define MAIN_ON_NODE 2
-unsigned int NodesUsed = 2;
+unsigned int NodesUsed = 3;
 unsigned int ThreadsPerNode = 8;
 unsigned int ThreadCount = NodesUsed * ThreadsPerNode;
 unsigned int RunLength = 0;
