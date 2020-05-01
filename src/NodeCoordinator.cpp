@@ -12,9 +12,13 @@ NodeCoordinator::NodeCoordinator(int numaNode, void *data)
     : NumaNode(numaNode), InputBuf(data), BatchCounter(0),
       coordinators(NumaAlloc<NodeCoordinator *>(numaNode)),
       NodeComms(numaNode, *this) {
-  for (auto &part : parts) {
-    part.windowId = -1;
-  }
+    if(numaNode == 0)
+    {
+
+        for (auto &part : parts) {
+            part.windowId = -1;
+        }
+    }
 }
 
 int NodeCoordinator::GetNode() { return NumaNode; }
@@ -23,8 +27,7 @@ void inline MarkGroupWithWindowId(ResultGroup &group, long windowId) {
   while (group.windowId != windowId) {
     assert(group.windowId <= windowId);
     long snappedWindowId = -1;
-    if(group.windowId.compare_exchange_strong(snappedWindowId, windowId))
-    {
+    if (group.windowId.compare_exchange_strong(snappedWindowId, windowId)) {
       break;
     }
   }
@@ -37,9 +40,13 @@ void NodeCoordinator::ProcessLocalResult(TaskResult &&result) {
 #endif
   auto &group = parts[(result.windowId) % PARTS_COUNT];
   MarkGroupWithWindowId(group, result.windowId);
-  auto position = group.resultCount.fetch_add(1);
-  assert(position < ResultGroup::RESULT_COUNT_LIMIT);
-  group.results[position] = std::move(result);
+  auto table = result.result.get();
+  Bucket<long, CounterVal> *buckets = table->getBuckets();
+  for (size_t i = 0; i < table->getNumberOfBuckets(); ++i) {
+    if (buckets[i].state) {
+        group.results[buckets[i].key] += buckets[i].value._1;
+    }
+  }
 }
 
 void NodeCoordinator::markWindowDone(long windowId) {
@@ -54,69 +61,17 @@ void NodeCoordinator::markWindowDone(long windowId) {
 #endif
   if (preIncrement + 1 == Setting::THREADS_USED) {
     assert(group.windowId.compare_exchange_strong(windowId, -2));
-    this->MergeAndOutput(group.resultCount, group.results);
+    // OUTPUT DUMMY ...
     group.reset();
 #ifdef POC_DEBUG
     std::stringstream stream;
-  stream << "Reset windowId: " << windowId
-         << " new count: " << group.threadSeenCounter << std::endl;
-  std::cout << stream.str();
+    stream << "Reset windowId: " << windowId
+           << " new count: " << group.threadSeenCounter << std::endl;
+    std::cout << stream.str();
 #endif
   }
 }
 
-void NodeCoordinator::MergeAndOutput(
-    size_t resultCount, TaskResult results[ResultGroup::RESULT_COUNT_LIMIT]) {
-  for (size_t i = 1; i < resultCount; ++i) {
-    MergeResults(results[0], results[i]);
-  }
-  OutputResult(results[0]);
-}
-
-void NodeCoordinator::MergeResults(TaskResult &a, const TaskResult &b) {
-  assert(std::abs(a.batchId - b.batchId) == 1);
-  assert(a.windowId == b.windowId);
-#ifdef POC_DEBUG
-  std::stringstream stream;
-  stream << "Merging windowId: " << a.windowId << " "
-#ifdef POC_DEBUG_POSITION
-         << a.startPos << " - " << a.endPos << " (" << a.endPos - a.startPos
-         << ")"
-#endif
-         << std::endl;
-  std::cout << stream.str();
-#endif
-  YahooQuery::merge(a, b);
-  a.batchId = std::max(a.batchId, b.batchId);
-#ifdef POC_DEBUG_POSITION
-  a.startPos = std::min(a.startPos, b.startPos);
-  a.endPos = std::max(a.endPos, b.endPos);
-#endif
-}
-
-void NodeCoordinator::OutputResult(const TaskResult &result) {
-#ifdef POC_DEBUG_POSITION
-  assert(result.endPos - result.startPos == 9999);
-#endif
-#ifdef POC_DEBUG
-  std::stringstream stream;
-  stream << "Outputting windowId: " << result.windowId << " "
-#ifdef POC_DEBUG_POSITION
-         << result.startPos << " - " << result.endPos << " ("
-         << result.endPos - result.startPos << ")"
-#endif
-         << std::endl;
-  std::cout << stream.str();
-#endif
-//  auto &table = result.result;
-//  for (size_t j = 0; j < table->getNumberOfBuckets(); ++j) {
-//    auto bucket = table->getBuckets()[j];
-//    if (bucket.state) {
-//      *(long *)outputBuf = bucket.key;
-//      *(long *)outputBuf = bucket.value._1;
-//    }
-//  }
-}
 
 [[nodiscard]] QueryTask NodeCoordinator::GetJob() {
 

@@ -52,7 +52,7 @@ void YahooQuery::process(const QueryTask &task) {
       continue;
     }
     CounterVal curVal{1, input[i].timestamp};
-    countMap->insert_or_modify(campaignId, curVal, 0);
+    countMap->insert_or_modify(campaignId, curVal, windowId);
   }
   this->OutputCb(TaskResult{lastWindowId, startingWindow, false, 0,
                             std::move(countMap), task.batchId

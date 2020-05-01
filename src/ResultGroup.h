@@ -4,14 +4,13 @@
 #include "TaskResult.h"
 #include <atomic>
 #include <set>
+#include <tbb/concurrent_unordered_map.h>
 
 struct ResultGroup {
-  ResultGroup() : results() {}
+  ResultGroup() : results(2000) {}
 
-  static const int RESULT_COUNT_LIMIT = 3;
-  TaskResult results[RESULT_COUNT_LIMIT];
+  tbb::concurrent_unordered_map<long, tbb::atomic<int32_t>> results;
   std::atomic<long> windowId;
-  std::atomic<long> resultCount;
   std::atomic<long> threadSeenCounter;
 
   void reset();

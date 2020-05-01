@@ -34,10 +34,6 @@ public:
   void markWindowDone(long i);
   void SetCoordinators(std::vector<NodeCoordinator *> coordinators);
 
-private:
-  void OutputResult(const TaskResult &result);
-  static void MergeResults(TaskResult &a, const TaskResult &b);
-  void MergeAndOutput(size_t resultCount, TaskResult *results);
 };
 
 #endif // PROOFOFCONCEPT_NODECOORDINATOR_H

@@ -18,16 +18,6 @@ struct PassSegmentJob {
   friend std::ostream &operator<<(std::ostream &out, const PassSegmentJob &j);
 };
 
-struct MergeAndOutputJob {
-  explicit MergeAndOutputJob(
-      size_t resultCount, TaskResult results[ResultGroup::RESULT_COUNT_LIMIT]);
-  size_t resultCount;
-  TaskResult results[ResultGroup::RESULT_COUNT_LIMIT];
-
-  friend std::ostream &operator<<(std::ostream &out,
-                                  const MergeAndOutputJob &j);
-};
-
 struct MarkBatchComplete {
   explicit MarkBatchComplete(long batchId);
   long batchId;
@@ -35,7 +25,7 @@ struct MarkBatchComplete {
                                   const MarkBatchComplete &j);
 };
 
-using Job = std::variant<int, PassSegmentJob, QueryTask, MergeAndOutputJob,
+using Job = std::variant<int, PassSegmentJob, QueryTask,
                          MarkBatchComplete>;
 
 #endif // PROOFOFCONCEPT_JOB_H
