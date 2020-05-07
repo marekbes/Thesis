@@ -81,11 +81,12 @@ void YahooQuery::SetOutputCb(std::function<void(TResult &&)> outputCb) {
   this->OutputCb = std::move(outputCb);
 }
 std::vector<char> YahooQuery::loadStaticData(int totalNodes) {
-  std::ifstream file(Setting::DATA_PATH + "input_" +
-                         std::to_string(totalNodes) + ".dat",
+  auto path = Setting::DATA_PATH + "input_" +
+              std::to_string(totalNodes) + ".dat";
+  std::ifstream file(path,
                      std::ifstream::binary);
   if (file.fail()) {
-    throw std::invalid_argument("missing input data");
+    throw std::invalid_argument("missing input data: " + path);
   }
   unsigned int len = 0;
   file.read((char *)&len, sizeof(len));
@@ -99,7 +100,7 @@ std::vector<char> YahooQuery::loadStaticData(int totalNodes) {
 void *YahooQuery::loadData(int node, int totalNodes) {
   auto path = Setting::DATA_PATH + "input_" + std::to_string(node) +
               "_" + std::to_string(totalNodes) + ".dat";
-  std::ifstream file(,
+  std::ifstream file(path,
                      std::ifstream::ate | std::ifstream::binary);
   if (file.fail()) {
     throw std::invalid_argument("missing input data: " + path);
