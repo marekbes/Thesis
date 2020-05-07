@@ -135,7 +135,7 @@ public:
     throw std::runtime_error("error: the hashtable is full \n");
   }
 
-  void insert_or_modify(KeyT &key, ValueT &value, long timestamp) {
+  void insert_or_modify(const KeyT &key, const ValueT &value, long timestamp) {
     size_t ind = _hasher(key) & _mask, i = ind;
     char tempState;
     for (; i < _num_buckets; i++) {

@@ -5,39 +5,29 @@
 #include <functional>
 #include <memory>
 
-struct CounterVal {
-  long _1;
-  long _2;
-};
-
-struct InputSchema {
-  long timestamp;
-  long padding_0;
-  long user_id;
-  long page_id;
-  long ad_id;
-  long ad_type;
-  long event_type;
-  long ip_address;
-};
-
-struct TaskResult {
+template <typename KeyType, typename TValue> struct TaskResult {
   long windowId;
   bool startingWindow;
   bool endingWindow;
   int numaNode;
-  std::unique_ptr<HashTable<long, CounterVal>,
-                  std::function<void(HashTable<long, CounterVal> *)>>
+  std::unique_ptr<HashTable<KeyType, TValue>,
+                  std::function<void(HashTable<KeyType, TValue> *)>>
       result;
   long batchId;
-  [[nodiscard]] bool isComplete() const {
-    return startingWindow && endingWindow;
-  }
 #ifdef POC_DEBUG_POSITION
   uint64_t startPos;
   uint64_t endPos;
 #endif
 
-  friend std::ostream & operator << (std::ostream &out, const TaskResult &tr);
+  std::ostream &operator<<(std::ostream &out) {
+#ifdef POC_DEBUG
+    out << "[ windowId: " << windowId << " batchId: " << batchId
+#ifdef POC_DEBUG_POSITION
+        << " startPos: " << startPos << " endPos: " << endPos
+#endif
+        << " result: " << result.get() << "]";
+#endif
+    return out;
+  }
 };
 #endif // PROOFOFCONCEPT_TASKRESULT_H

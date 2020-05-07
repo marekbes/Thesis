@@ -4,14 +4,13 @@
 #include <algorithm>
 #include <boost/program_options.hpp>
 #include <boost/thread.hpp>
-#include <fstream>
 #include <iostream>
 #include <numa.h>
 #include <random>
 #include <unordered_set>
 
-#define MAIN_ON_NODE 2
-unsigned int NodesUsed = 3;
+#define MAIN_ON_NODE 1
+unsigned int NodesUsed = 4;
 unsigned int ThreadsPerNode = 8;
 unsigned int ThreadCount = NodesUsed * ThreadsPerNode;
 unsigned int RunLength = 0;
@@ -48,59 +47,27 @@ void parse_args(int argc, const char **argv) {
   }
 }
 
-std::vector<long> loadStaticData(int nodeCount) {
-  std::ifstream file(Setting::DATA_PATH + "input_" + std::to_string(nodeCount) +
-                         ".dat",
-                     std::ifstream::binary);
-  if (file.fail()) {
-    throw std::invalid_argument("missing input data");
-  }
-  std::vector<long> data;
-  unsigned int len = 0;
-  file.read((char *)&len, sizeof(len));
-  data.resize(len);
-  if (len > 0)
-    file.read((char *)&data[0], len * sizeof(long));
-  return data;
-}
-
-void *loadData(int node, int nodeCount) {
-  std::ifstream file(Setting::DATA_PATH + "input_" + std::to_string(node) +
-                         "_" + std::to_string(nodeCount) + ".dat",
-                     std::ifstream::ate | std::ifstream::binary);
-  if (file.fail()) {
-    throw std::invalid_argument("missing input data");
-  }
-  auto size = file.tellg();
-  file.seekg(0);
-  assert(size >= static_cast<long>(Setting::DATA_COUNT * Setting::BATCH_SIZE));
-  auto data = numa_alloc_onnode(size, node);
-  file.read(static_cast<char *>(data), size);
-  return data;
-}
-
 int main(int argc, const char **argv) {
   assert(Setting::BATCH_SIZE % Setting::PAGE_SIZE == 0);
   numa_set_bind_policy(1);
   numa_set_preferred(MAIN_ON_NODE);
-  auto fromNodes = numa_parse_nodestring("0-3");
-  auto toNodes = numa_parse_nodestring("2");
+  auto fromNodes = numa_all_nodes_ptr;
+  auto toNodes = numa_parse_nodestring("1");
   numa_migrate_pages(0, fromNodes, toNodes);
   numa_free_nodemask(fromNodes);
   numa_free_nodemask(toNodes);
 
   parse_args(argc, argv);
-  std::vector<NodeCoordinator *> coordinators;
-  std::vector<Executor *> workers;
-  std::vector<NodeComm *> comms;
+  std::vector<NodeCoordinator<Setting::Query> *> coordinators;
+  std::vector<Executor<Setting::Query> *> workers;
   auto NodesUsed = 1 + ((ThreadCount - 1) / ThreadsPerNode);
   Setting::NODES_USED = NodesUsed;
   Setting::THREADS_USED = ThreadCount;
   auto ThreadsToAllocate = ThreadCount;
-  auto staticData = loadStaticData(NodesUsed);
+  auto staticData = Setting::Query::loadStaticData(NodesUsed);
   for (size_t i = 0; i < NodesUsed; i++) {
     numa_set_preferred(i);
-    auto dataBuf = loadData(i, NodesUsed);
+    auto dataBuf = Setting::Query::loadData(i, NodesUsed);
     int status[1];
     long ret_code;
     status[0] = -1;
@@ -108,20 +75,18 @@ int main(int argc, const char **argv) {
         numa_move_pages(0 /*self memory */, 1, &dataBuf, NULL, status, 0);
     printf("Memory at %p is at %d node (retcode %ld)\n", dataBuf, status[0],
            ret_code);
-    auto *coordinator = new NodeCoordinator(i, dataBuf);
+    auto *coordinator = new NodeCoordinator<Setting::Query>(i, dataBuf);
     coordinators.push_back(coordinator);
     for (size_t j = 0; j < std::min(ThreadsToAllocate, ThreadsPerNode); ++j) {
-      auto *worker = new Executor(coordinator, i * ThreadsPerNode + j,
-                                  new YahooQuery(staticData));
+      auto *worker = new Executor<Setting::Query>(coordinator, i * ThreadsPerNode + j,
+                                  new Setting::Query(staticData));
       workers.push_back(worker);
     }
-    comms.push_back(&coordinator->NodeComms);
     ThreadsToAllocate -= ThreadsPerNode;
   }
   for (size_t i = 0; i < NodesUsed; i++) {
     numa_set_preferred(i);
     coordinators[i]->SetCoordinators(coordinators);
-    coordinators[i]->NodeComms.initComms(comms);
   }
   numa_set_preferred(MAIN_ON_NODE);
 

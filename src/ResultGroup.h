@@ -5,17 +5,28 @@
 #include <atomic>
 #include <set>
 #include <tbb/concurrent_unordered_map.h>
-
+template <typename TKeyType, typename TValueType>
 struct ResultGroup {
   ResultGroup() : results(2000) {}
 
-  tbb::concurrent_unordered_map<long, tbb::atomic<int32_t>> results;
+  tbb::concurrent_unordered_map<TKeyType, TValueType, std::hash<TKeyType>> results;
   std::atomic<long> windowId;
   std::atomic<long> threadSeenCounter;
 
-  void reset();
+  std::ostream &operator<<(std::ostream &out) {
+    out << "ResultGroup [ ";
+    out << results.size();
+    out << "]";
+    return out;
+  }
 
-  friend std::ostream &operator<<(std::ostream &out, const ResultGroup &j);
+  void reset() {
+    threadSeenCounter = 0;
+    for (auto iter = results.begin(); iter != results.end(); iter++) {
+      iter->second = 0;
+    }
+    windowId = -1;
+  }
 };
 
 #endif // PROOFOFCONCEPT_RESULTGROUP_H
