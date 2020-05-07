@@ -97,11 +97,12 @@ std::vector<char> YahooQuery::loadStaticData(int totalNodes) {
 }
 
 void *YahooQuery::loadData(int node, int totalNodes) {
-  std::ifstream file(Setting::DATA_PATH + "input_" + std::to_string(node) +
-                         "_" + std::to_string(totalNodes) + ".dat",
+  auto path = Setting::DATA_PATH + "input_" + std::to_string(node) +
+              "_" + std::to_string(totalNodes) + ".dat";
+  std::ifstream file(,
                      std::ifstream::ate | std::ifstream::binary);
   if (file.fail()) {
-    throw std::invalid_argument("missing input data");
+    throw std::invalid_argument("missing input data: " + path);
   }
   auto size = file.tellg();
   file.seekg(0);
