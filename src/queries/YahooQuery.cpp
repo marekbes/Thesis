@@ -19,12 +19,12 @@ void YahooQuery::process(const QueryTask &task) {
   auto countMap = TablePool.acquire();
 
   auto input = reinterpret_cast<const InputSchema *>(task.data);
-  auto lastWindowId = (input[0].timestamp + task.timestampOffset) / 10000;
+  auto lastWindowId = ComputeTimestamp(input[0], task.timestampOffset);
 #ifdef POC_DEBUG_POSITION
   auto lastOutputPos = task.startPos;
 #endif
   for (int i = 0; i < task.size; ++i) {
-    auto windowId = (input[i].timestamp + task.timestampOffset) / 10000;
+    auto windowId = ComputeTimestamp(input[i], task.timestampOffset);
     if (windowId != lastWindowId) {
 #ifdef POC_DEBUG_POSITION
       this->OutputCb(TResult{lastWindowId, startingWindow, true, 0,
@@ -81,10 +81,9 @@ void YahooQuery::SetOutputCb(std::function<void(TResult &&)> outputCb) {
   this->OutputCb = std::move(outputCb);
 }
 std::vector<char> YahooQuery::loadStaticData(int totalNodes) {
-  auto path = Setting::DATA_PATH + "input_" +
-              std::to_string(totalNodes) + ".dat";
-  std::ifstream file(path,
-                     std::ifstream::binary);
+  auto path =
+      Setting::DATA_PATH + "input_" + std::to_string(totalNodes) + ".dat";
+  std::ifstream file(path, std::ifstream::binary);
   if (file.fail()) {
     throw std::invalid_argument("missing input data: " + path);
   }
@@ -98,10 +97,9 @@ std::vector<char> YahooQuery::loadStaticData(int totalNodes) {
 }
 
 void *YahooQuery::loadData(int node, int totalNodes) {
-  auto path = Setting::DATA_PATH + "input_" + std::to_string(node) +
-              "_" + std::to_string(totalNodes) + ".dat";
-  std::ifstream file(path,
-                     std::ifstream::ate | std::ifstream::binary);
+  auto path = Setting::DATA_PATH + "input_" + std::to_string(node) + "_" +
+              std::to_string(totalNodes) + ".dat";
+  std::ifstream file(path, std::ifstream::ate | std::ifstream::binary);
   if (file.fail()) {
     throw std::invalid_argument("missing input data: " + path);
   }
@@ -117,4 +115,7 @@ void *YahooQuery::loadData(int node, int totalNodes) {
 long YahooQuery::ComputeTimestampOffset(int batch) {
   return (batch / Setting::DATA_COUNT) * Setting::DATA_COUNT *
          Setting::BATCH_COUNT * Setting::NODES_USED;
+}
+long YahooQuery::ComputeTimestamp(const InputSchema &input, const long timestampOffset) {
+  return (input.timestamp + timestampOffset)/ 100000;
 }

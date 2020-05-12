@@ -54,7 +54,7 @@ public:
   explicit SmartGrid2(std::vector<char> &staticJoinData);
   void process(const QueryTask &task);
   void SetOutputCb(std::function<void(TResult &&)> outputCb);
-  void merge(TResult &a, const TResult &b);
+  static void merge(TResult &a, const TResult &b);
   static long ComputeTimestampOffset(int batch);
   static void* loadData(int node, int totalNodes);
   static std::vector<char> loadStaticData(int totalNodes);

@@ -33,12 +33,13 @@ public:
   HashTable<long, long> StaticJoinTable;
   HashTablePool<long, CounterVal> TablePool;
   std::function<void(TResult &&)> OutputCb;
+  inline static long ComputeTimestamp(const InputSchema& input, const long timestampOffset);
 
 public:
   explicit YahooQuery(std::vector<char> &staticJoinData);
   void process(const QueryTask &task);
   void SetOutputCb(std::function<void(TResult &&)> outputCb);
-  void merge(TResult &a, const TResult &b);
+  static void merge(TResult &a, const TResult &b);
   static void* loadData(int node, int totalNodes);
   static std::vector<char> loadStaticData(int totalNodes);
   static long ComputeTimestampOffset(int batch);

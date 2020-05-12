@@ -6,11 +6,12 @@
 #include "queries/YahooQuery.h"
 #include <boost/atomic.hpp>
 #include <zconf.h>
+
 class Setting {
 public:
   using Query = YahooQuery;
   // Tuple count in a batch
-  static const long BATCH_COUNT = 1024 * 8;
+  static const long BATCH_COUNT = 1024 * 16;
   // Batch size in bytes
   static const long BATCH_SIZE =
       BATCH_COUNT * sizeof(typename Query::InputSchema);

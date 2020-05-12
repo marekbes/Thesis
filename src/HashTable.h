@@ -5,7 +5,7 @@
 #include <utility>
 //#include <cstring>
 
-#define MAP_SIZE 512
+#define MAP_SIZE 256
 #define KEY_SIZE 4
 #define VALUE_SIZE 4
 

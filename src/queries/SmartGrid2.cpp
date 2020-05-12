@@ -75,17 +75,16 @@ void *SmartGrid2::loadData(int node, int totalNodes) {
   auto dataCount = 33627;
   assert(dataCount > totalNodes * Setting::BATCH_COUNT);
   Setting::DATA_COUNT = 1;
-  size_t len = Setting::DATA_COUNT * Setting::BATCH_COUNT;
+  long len = Setting::DATA_COUNT * Setting::BATCH_COUNT;
   auto data = numa_alloc_onnode(Setting::DATA_COUNT * Setting::BATCH_SIZE, node);
   auto buf = (InputSchema *)data;
 
   std::ifstream file("datasets/smartgrid-data.txt");
   std::string line;
-  unsigned long idx = 0;
+  long idx = 0;
   long normalisedTimestamp = -1;
   while (std::getline(file, line) && idx < len) {
     parse(buf[idx], line, normalisedTimestamp);
-    buf[idx].timestamp;
     idx++;
   }
   DataRange = buf[idx - 1].timestamp - buf[0].timestamp;
