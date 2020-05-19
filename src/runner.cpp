@@ -1,10 +1,13 @@
+#include "DefaultTableProvider.h"
 #include "DelayedResultMerger.h"
+#include "DirectResultMerger.h"
 #include "EagerResultMerger.h"
 #include "Executor.h"
 #include "NodeCoordinator.h"
 #include "Setting.h"
 #include "ThreadClockWindowMarker.h"
 #include "ThreadCountWindowMarker.h"
+#include "queries/YahooQuery.h"
 #include <algorithm>
 #include <boost/program_options.hpp>
 #include <boost/thread.hpp>
@@ -46,10 +49,10 @@ Configuration parse_args(int argc, const char **argv) {
       "run-length", po::value<int>(),
       "seconds before exiting")("nodes", po::value<int>(), "NUMA nodes used")(
       "query", po::value<std::string>()->default_value("yahoo"),
-      "Query to run [yahoo]")("merger",
-                              po::value<std::string>()->default_value("eager"),
-                              "Result merger to use [eager | delayed]")(
-      "marker", po::value<std::string>()->default_value("clock"),
+      "Query to run [yahoo]")(
+      "merger", po::value<std::string>()->default_value("direct"),
+      "Result merger to use [eager | delayed | direct]")(
+      "marker", po::value<std::string>()->default_value("count"),
       "Window marker to use [count | clock]");
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -79,7 +82,7 @@ Configuration parse_args(int argc, const char **argv) {
                        vm["marker"].as<std::string>()};
 }
 
-void reportThroughput() {
+void reportThroughput(boost::thread_group &group, bool &running) {
   auto reportTime = RunLength <= 0 ? 2 : RunLength;
   boost::this_thread::sleep_for(boost::chrono::seconds(2));
   Setting::DataCounter.exchange(0, boost::memory_order_relaxed);
@@ -90,27 +93,37 @@ void reportThroughput() {
     std::cout << "throughput: " << (double)throughput / reportTime / 1000000000
               << "GB/s" << std::endl;
     if (RunLength > 0) {
+      LatencyMonitor::PrintStatistics();
+      running = false;
+      group.join_all();
       exit(0);
     }
   }
 }
 
-template <typename TQuery, template <typename, typename> typename TResultMerger,
+template <template <typename> typename TQuery,
+          template <template <typename> typename, typename>
+          typename TTableProvider,
+          template <typename, typename> typename TResultMerger,
           template <typename> typename TWindowMarker>
 void start() {
-  using _NodeCoordinator =
-      NodeCoordinator<TQuery, TResultMerger, TWindowMarker>;
-  using _Executor = Executor<TQuery>;
+  using Types =
+      NodeCoordinator<TQuery, TTableProvider, TResultMerger, TWindowMarker>;
+  using _NodeCoordinator = typename Types::Impl;
+  using Query = typename Types::Query;
+  Setting::BATCH_SIZE =
+      Setting::BATCH_COUNT * sizeof(typename Query::InputSchema);
+  using _Executor = Executor<Query>;
   std::vector<_NodeCoordinator *> coordinators;
   std::vector<_Executor *> workers;
   auto NodesUsed = 1 + ((ThreadCount - 1) / ThreadsPerNode);
   Setting::NODES_USED = NodesUsed;
   Setting::THREADS_USED = ThreadCount;
   auto ThreadsToAllocate = ThreadCount;
-  auto staticData = Setting::Query::loadStaticData(NodesUsed);
+  auto staticData = Query::loadStaticData(NodesUsed);
   for (size_t i = 0; i < NodesUsed; i++) {
     numa_set_preferred(i);
-    auto dataBuf = Setting::Query::loadData(i, NodesUsed);
+    auto dataBuf = Query::loadData(i, NodesUsed);
     int status[1];
     long ret_code;
     status[0] = -1;
@@ -118,11 +131,12 @@ void start() {
         numa_move_pages(0 /*self memory */, 1, &dataBuf, NULL, status, 0);
     printf("Memory at %p is at %d node (retcode %ld)\n", dataBuf, status[0],
            ret_code);
-    auto *coordinator = new _NodeCoordinator(i, dataBuf);
+    auto *coordinator = new typename _NodeCoordinator::Impl(i, dataBuf);
     coordinators.push_back(coordinator);
     for (size_t j = 0; j < std::min(ThreadsToAllocate, ThreadsPerNode); ++j) {
-      auto *worker = new _Executor(coordinator, i * ThreadsPerNode + j,
-                                   new Setting::Query(staticData));
+      auto *worker = new _Executor(
+          coordinator, i * ThreadsPerNode + j,
+          new Query(staticData, typename Types::TableProvider(*coordinator)));
       workers.push_back(worker);
     }
     ThreadsToAllocate -= ThreadsPerNode;
@@ -141,9 +155,10 @@ void start() {
     });
     auto name = "Worker " + std::to_string(i);
     pthread_setname_np(thread->native_handle(), name.c_str());
+
+    startRunning = true;
   }
-  startRunning = true;
-  reportThroughput();
+  reportThroughput(workerThreads, startRunning);
 }
 
 using StarterFunc = std::function<void()>;
@@ -151,13 +166,23 @@ using StarterFunc = std::function<void()>;
 static std::unordered_map<Configuration, StarterFunc, ConfigurationHash>
     startMapping{
         {Configuration{"yahoo", "eager", "count"},
-         start<YahooQuery, EagerResultMerger, ThreadCountWindowMarker>},
+         start<YahooQuery, DefaultTableProvider, EagerResultMerger,
+               ThreadCountWindowMarker>},
         {Configuration{"yahoo", "eager", "clock"},
-         start<YahooQuery, EagerResultMerger, ThreadClockWindowMarker>},
+         start<YahooQuery, DefaultTableProvider, EagerResultMerger,
+               ThreadClockWindowMarker>},
         {Configuration{"yahoo", "delayed", "count"},
-         start<YahooQuery, DelayedResultMerger, ThreadCountWindowMarker>},
+         start<YahooQuery, DefaultTableProvider, DelayedResultMerger,
+               ThreadCountWindowMarker>},
         {Configuration{"yahoo", "delayed", "clock"},
-         start<YahooQuery, DelayedResultMerger, ThreadClockWindowMarker>},
+         start<YahooQuery, DefaultTableProvider, DelayedResultMerger,
+               ThreadClockWindowMarker>},
+        {Configuration{"yahoo", "direct", "count"},
+         start<YahooQuery, DirectTableProvider, DirectResultMerger,
+               ThreadCountWindowMarker>},
+        {Configuration{"yahoo", "direct", "clock"},
+         start<YahooQuery, DirectTableProvider, DirectResultMerger,
+               ThreadClockWindowMarker>},
     };
 
 int main(int argc, const char **argv) {

@@ -4,7 +4,7 @@
 #include <numa.h>
 
 void SmartGrid2::process(const QueryTask &task) {
-  bool startingWindow = false;
+  //bool startingWindow = false;
   auto countMap = TablePool.acquire();
 
   auto input = reinterpret_cast<const InputSchema *>(task.data);
@@ -22,10 +22,10 @@ void SmartGrid2::process(const QueryTask &task) {
                              task.startPos + i - 1});
       lastOutputPos = task.startPos + i;
 #else
-      this->OutputCb(TResult{lastWindowId, startingWindow, true, 0,
-                             std::move(countMap), task.batchId});
+//      this->OutputCb(TResult{lastWindowId, startingWindow, true, 0,
+//                             std::move(countMap), task.batchId});
 #endif
-      startingWindow = true;
+      //startingWindow = true;
       countMap = this->TablePool.acquire();
 #ifdef POC_DEBUG
       std::stringstream stream;
@@ -38,18 +38,18 @@ void SmartGrid2::process(const QueryTask &task) {
     countMap->insert_or_modify(Key{elem.plug, elem.household, elem.house},
                                CounterVal{1, elem.timestamp}, windowId);
   }
-  this->OutputCb(TResult{lastWindowId, startingWindow, false, 0,
-                         std::move(countMap), task.batchId
-#ifdef POC_DEBUG_POSITION
-                         ,
-                         lastOutputPos, task.endPos
-#endif
-  });
+//  this->OutputCb(TResult{lastWindowId, startingWindow, false, 0,
+//                         std::move(countMap), task.batchId
+//#ifdef POC_DEBUG_POSITION
+//                         ,
+//                         lastOutputPos, task.endPos
+//#endif
+//  });
 }
 void SmartGrid2::SetOutputCb(std::function<void(TResult &&)> outputCb) {
   this->OutputCb = std::move(outputCb);
 }
-void SmartGrid2::merge(TResult &a, const TResult &b) {}
+void SmartGrid2::merge(TResult &, const TResult &) {}
 
 std::vector<char> SmartGrid2::loadStaticData(int) {
   return std::vector<char>();

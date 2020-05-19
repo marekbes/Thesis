@@ -18,14 +18,16 @@ public:
     void reset() {}
   };
 
-  ThreadClockWindowMarker(TCoordinator &coordinator)
+  explicit ThreadClockWindowMarker(TCoordinator &coordinator)
       : coordinator(coordinator) {}
   void MarkWindowDone(long fromWindowId, long toWindowId, int threadNumber);
   bool TryOutput() {
     if (maxAgreedWindow.load() > lastOutputWindow) {
       std::unique_lock<std::mutex> lock(mutex, std::try_to_lock);
-      if (lock.owns_lock()) {
-        coordinator.Output(coordinator.GetResultGroup(lastOutputWindow));
+      if (lock.owns_lock() && maxAgreedWindow.load() > lastOutputWindow) {
+        auto& group = coordinator.GetResultGroup(lastOutputWindow);
+        coordinator.Output(group);
+        group.reset();
         lastOutputWindow++;
         return true;
       }
@@ -35,7 +37,7 @@ public:
 };
 
 template <typename TCoordinator>
-void ThreadClockWindowMarker<TCoordinator>::MarkWindowDone(long,
+void ThreadClockWindowMarker<TCoordinator>::MarkWindowDone(long fromWindowId,
                                                            long toWindowId,
                                                            int threadNumber) {
 #ifdef POC_DEBUG

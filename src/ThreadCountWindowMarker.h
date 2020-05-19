@@ -20,16 +20,20 @@ public:
     }
   };
 
-  ThreadCountWindowMarker(TCoordinator &coordinator)
+  explicit ThreadCountWindowMarker(TCoordinator &coordinator)
       : coordinator(coordinator) {}
   void MarkWindowDone(long fromWindowId, long toWindowId, int threadNumber);
   bool TryOutput() {
-
+    auto &group = coordinator.GetResultGroup(lastOutputWindow);
+    if (group.markerData.threadSeenCounter.load() != Setting::THREADS_USED) {
+      return false;
+    }
     std::unique_lock<std::mutex> lock(mutex, std::try_to_lock);
     if (lock.owns_lock()) {
-      auto &group = coordinator.GetResultGroup(lastOutputWindow);
-      if (group.markerData.threadSeenCounter.load() == Setting::THREADS_USED) {
-        coordinator.Output(group);
+      auto &group2 = coordinator.GetResultGroup(lastOutputWindow);
+      if (group2.markerData.threadSeenCounter.load() == Setting::THREADS_USED) {
+        coordinator.Output(group2);
+        group2.reset();
         lastOutputWindow++;
         return true;
       }

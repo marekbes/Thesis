@@ -36,7 +36,7 @@ public:
   };
   using LocalValueType = CounterVal;
   using GlobalValueType = std::atomic<int64_t>;
-  using TResult = TaskResult<KeyType, LocalValueType>;
+  using TResult = TaskResult<KeyType>;
   struct InputSchema {
     long timestamp;
     float value;

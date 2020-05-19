@@ -3,9 +3,9 @@
 
 #include <atomic>
 #include <cassert>
-#include <tbb/concurrent_unordered_map.h>
 #include <iostream>
 #include <sstream>
+#include <tbb/concurrent_unordered_map.h>
 
 template <typename TQuery, typename TCoordinator> class DelayedResultMerger {
   TCoordinator &coordinator;
@@ -65,8 +65,14 @@ public:
 
   void Output(ResultGroupData &group) {
     int count = group.resultCount;
+#ifdef POC_LATENCY
+    LatencyMonitor::InsertMeasurement(group.results[0].latencyMark);
+#endif
     for (auto i = 1; i < count; ++i) {
       MergeResults(group.results[0], group.results[i]);
+#ifdef POC_LATENCY
+      LatencyMonitor::InsertMeasurement(group.results[i].latencyMark);
+#endif
     }
 #ifdef POC_DEBUG_POSITION
     assert(group.results[0].endPos - group.results[0].startPos == 9999);

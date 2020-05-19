@@ -2,18 +2,18 @@
 #define PROOFOFCONCEPT_TASKRESULT_H
 
 #include "HashTable.h"
+#include "LatencyMonitor.h"
 #include <functional>
 #include <memory>
 
-template <typename KeyType, typename TValue> struct TaskResult {
+template <typename DataType> struct TaskResult {
   long windowId;
   bool startingWindow;
   bool endingWindow;
   int numaNode;
-  std::unique_ptr<HashTable<KeyType, TValue>,
-                  std::function<void(HashTable<KeyType, TValue> *)>>
-      result;
+  DataType result;
   long batchId;
+  LatencyMonitor::Timestamp_t latencyMark;
 #ifdef POC_DEBUG_POSITION
   uint64_t startPos;
   uint64_t endPos;

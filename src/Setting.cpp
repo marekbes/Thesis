@@ -1,4 +1,5 @@
 #include "Setting.h"
+long Setting::BATCH_SIZE = 0;
 long Setting::PAGE_SIZE = sysconf(_SC_PAGE_SIZE);
 long Setting::DATA_COUNT = 0;
 int Setting::NODES_USED = -1;

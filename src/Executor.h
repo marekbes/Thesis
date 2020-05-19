@@ -1,12 +1,12 @@
 #ifndef PROOFOFCONCEPT_EXECUTOR_H
 #define PROOFOFCONCEPT_EXECUTOR_H
 
+#include "AbstractNodeCoordinator.h"
 #include "Executor.h"
 #include "NodeCoordinator.h"
 #include <iostream>
 #include <numa.h>
 #include <sstream>
-#include "AbstractNodeCoordinator.h"
 
 template <typename TQuery> class Executor {
   AbstractNodeCoordinator<TQuery> *coordinator;
@@ -47,9 +47,11 @@ public:
       lastWindowId = std::max(tr.windowId, lastWindowId);
       coordinator->ProcessLocalResult(std::move(tr));
     });
-    while (true) {
+    while (startRunning) {
       auto task = coordinator->GetJob();
-      query->process(task);
+      if (task.batchId != -1) {
+        query->process(task);
+      }
     }
   }
 };
