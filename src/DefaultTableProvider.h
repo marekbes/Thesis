@@ -12,12 +12,10 @@ class DefaultTableProvider {
   HashTablePool<typename Query::KeyType, typename Query::LocalValueType> pool;
 
 public:
+  using MapType = typename PoolType::pointer;
   explicit DefaultTableProvider(TCoordinator &) {}
   DefaultTableProvider(DefaultTableProvider &) {}
-  using TResult = TaskResult<std::unique_ptr<
-      HashTable<typename Query::KeyType, typename Query::LocalValueType>,
-      std::function<void(HashTable<typename Query::KeyType,
-                                   typename Query::LocalValueType> *)>>>;
+  using TResult = TaskResult<typename PoolType::pointer>;
   typename PoolType::pointer acquire(long) { return pool.acquire(); }
 };
 #endif // PROOFOFCONCEPT_DEFAULTTABLEPROVIDER_H

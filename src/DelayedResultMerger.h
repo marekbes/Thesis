@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <tbb/concurrent_unordered_map.h>
+#include "SlidingWindowHandler.h"
 
 template <typename TQuery, typename TCoordinator> class DelayedResultMerger {
   TCoordinator &coordinator;
@@ -34,7 +35,7 @@ private:
 
 public:
   struct ResultGroupData {
-    static const int RESULT_COUNT_LIMIT = 8;
+    static const int RESULT_COUNT_LIMIT = 20;
 
     typename TQuery::TResult results[RESULT_COUNT_LIMIT];
     std::atomic<long> resultCount;
@@ -63,20 +64,26 @@ public:
     data.results[position] = std::move(result);
   }
 
-  void Output(ResultGroupData &group) {
+  typename SlidingWindowHandler<TQuery>::SliderResult Output(ResultGroupData &group) {
     int count = group.resultCount;
 #ifdef POC_LATENCY
-    LatencyMonitor::InsertMeasurement(group.results[0].latencyMark);
+    auto timestamp = group.results[0].latencyMark;
 #endif
     for (auto i = 1; i < count; ++i) {
       MergeResults(group.results[0], group.results[i]);
 #ifdef POC_LATENCY
-      LatencyMonitor::InsertMeasurement(group.results[i].latencyMark);
+      timestamp = std::min(timestamp, group.results[i].latencyMark);
 #endif
     }
 #ifdef POC_DEBUG_POSITION
     assert(group.results[0].endPos - group.results[0].startPos == 9999);
 #endif
+    return {std::move(group.results[0].result)
+#ifdef POC_LATENCY
+                                          ,
+                                      timestamp
+#endif
+    };
   };
 };
 #endif // PROOFOFCONCEPT_DELAYEDRESULTMERGER_H

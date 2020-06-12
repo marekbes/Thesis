@@ -6,6 +6,7 @@
 
 template <typename TQuery, typename TCoordinator> class EagerResultMerger {
   TCoordinator &coordinator;
+  HashTablePool<typename TQuery::KeyType, typename TQuery::LocalValueType> pool;
 
 public:
   struct ResultGroupData {
@@ -51,11 +52,19 @@ public:
     }
   }
 
-  void Output(ResultGroupData &group){
+  typename SlidingWindowHandler<TQuery>::SliderResult
+  Output(ResultGroupData &group) {
+    auto map = pool.acquire();
+    for (auto i = group.results.cbegin(); i != group.results.cend(); i++) {
+      map->insert(i->first, TQuery::ConvertToLocal(i->second), 0);
+    }
+    return {std::move(map)
 #ifdef POC_LATENCY
-    LatencyMonitor::InsertMeasurement(group.latencyMark);
+        ,
+            group.latencyMark
 #endif
-  };
+    };
+  }
 };
 
 #endif // PROOFOFCONCEPT_EAGERRESULTMERGER_H

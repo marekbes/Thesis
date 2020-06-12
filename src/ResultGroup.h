@@ -5,7 +5,7 @@
 #include <atomic>
 #include <set>
 template <typename MergerData, typename MarkerData>
-struct alignas(64) ResultGroup {
+struct ResultGroup {
   ResultGroup(){}
 
   MergerData mergerData;

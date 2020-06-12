@@ -6,8 +6,10 @@
 #include "QueryTask.h"
 #include "ResultGroup.h"
 #include "Setting.h"
+#include "SlidingWindowHandler.h"
 #include "TaskResult.h"
 #include <hash_fun.h>
+#include <memory>
 #include <queue>
 #include <sstream>
 #include <tbb/concurrent_priority_queue.h>
@@ -23,8 +25,10 @@ template <template <typename> typename TQuery,
 class NodeCoordinator {
 public:
   class Impl;
+
   using TableProvider = TTableProvider<TQuery, Impl>;
   using Query = TQuery<TableProvider>;
+  using Slider = SlidingWindowHandler<Query>;
   using Marker = TWindowMarker<Impl>;
   using Merger = TResulMerger<Query, Impl>;
 
@@ -32,6 +36,20 @@ public:
   public:
     using RGroup = ResultGroup<typename Merger::ResultGroupData,
                                typename Marker::ResultGroupData>;
+    static void InitializeSharedRegion() {
+      auto mask = numa_allocate_nodemask();
+      for (int i = 0; i < Setting::NODES_USED; ++i) {
+        numa_bitmask_setbit(mask, i);
+      }
+      parts = reinterpret_cast<RGroup *>(malloc(sizeof(RGroup[Setting::SHARED_SLOTS])));
+//      parts = reinterpret_cast<RGroup *>(numa_alloc_interleaved_subset(
+//          sizeof(RGroup[Setting::SHARED_SLOTS]), mask));
+      numa_free_nodemask(mask);
+      new (parts) RGroup[Setting::SHARED_SLOTS];
+      for (auto i = 0; i < Setting::SHARED_SLOTS; i++) {
+        parts[i].windowId = -1;
+      }
+    }
 
   private:
     int NumaNode;
@@ -41,20 +59,15 @@ public:
     Marker marker;
     Merger merger;
 
-    static const int PARTS_COUNT = 5000;
-    static RGroup parts[PARTS_COUNT];
+    static RGroup *parts;
 
   public:
+    static Slider slider;
+
     Impl(int numaNode, void *data)
         : NumaNode(numaNode), InputBuf(data), BatchCounter(0),
           coordinators(NumaAlloc<Impl *>(numaNode)), marker(*this),
-          merger(*this) {
-      if (numaNode == 0) {
-        for (auto &part : parts) {
-          part.windowId = -1;
-        }
-      }
-    }
+          merger(*this) {}
 
     int GetNode() override { return NumaNode; }
 
@@ -76,7 +89,7 @@ public:
     }
 
     RGroup &GetResultGroup(long windowId) {
-      return parts[windowId % PARTS_COUNT];
+      return parts[windowId % Setting::SHARED_SLOTS];
     }
 
     void MarkWindowDone(long fromWindowId, long toWindowId,
@@ -136,10 +149,10 @@ public:
       //          return job;
       //        }
       if (current - lowest > 50) {
-        return QueryTask{-1, nullptr, 0, 0,
-                         LatencyMonitor::Timestamp_t ::max()};
+        return QueryTask{-1, nullptr, 0, 0, LatencyMonitor::Timestamp_t::max()};
       }
-      while (marker.TryOutput());
+      while (marker.TryOutput())
+        ;
       return GetNextBatchTask();
     }
 
@@ -148,7 +161,16 @@ public:
     }
 
     void Output(RGroup &group) {
-      merger.Output(group.mergerData);
+#ifdef POC_DEBUG
+      std::stringstream stream;
+      char name[100];
+      pthread_getname_np(pthread_self(), name, 100);
+      stream << name << " Outputing windowId: " << group.windowId.load()
+             << std::endl;
+      std::cout << stream.str();
+#endif
+      auto &&map = merger.Output(group.mergerData);
+      slider.OutputResult(std::move(map));
     }
   };
 };
@@ -160,6 +182,16 @@ template <template <typename> typename TQuery,
           template <typename> typename TWindowMarker>
 typename NodeCoordinator<TQuery, TTableProvider, TResulMerger,
                          TWindowMarker>::Impl::RGroup
+    *NodeCoordinator<TQuery, TTableProvider, TResulMerger,
+                     TWindowMarker>::Impl::parts;
+
+template <template <typename> typename TQuery,
+          template <template <typename> typename, typename>
+          typename TTableProvider,
+          template <typename, typename> typename TResulMerger,
+          template <typename> typename TWindowMarker>
+typename NodeCoordinator<TQuery, TTableProvider, TResulMerger,
+                         TWindowMarker>::Slider
     NodeCoordinator<TQuery, TTableProvider, TResulMerger,
-                    TWindowMarker>::Impl::parts[PARTS_COUNT];
+                    TWindowMarker>::Impl::slider;
 #endif // PROOFOFCONCEPT_NODECOORDINATOR_H

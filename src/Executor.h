@@ -42,6 +42,7 @@ public:
         }
       }
     }
+    numa_free_cpumask(nodeCpuMask);
     query->SetOutputCb([this](typename TQuery::TResult &&tr) {
       coordinator->MarkWindowDone(lastWindowId, tr.windowId, ThreadNumber);
       lastWindowId = std::max(tr.windowId, lastWindowId);

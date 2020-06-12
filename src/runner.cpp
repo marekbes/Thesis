@@ -9,6 +9,7 @@
 #include "ThreadCountWindowMarker.h"
 #include "queries/YahooQuery.h"
 #include <algorithm>
+#include <boost/algorithm/string.hpp>
 #include <boost/program_options.hpp>
 #include <boost/thread.hpp>
 #include <iostream>
@@ -17,9 +18,6 @@
 #include <unordered_set>
 
 #define MAIN_ON_NODE 1
-unsigned int NodesUsed = 4;
-unsigned int ThreadsPerNode = 8;
-unsigned int ThreadCount = NodesUsed * ThreadsPerNode;
 unsigned int RunLength = 0;
 
 struct Configuration {
@@ -45,15 +43,24 @@ Configuration parse_args(int argc, const char **argv) {
   namespace po = boost::program_options;
   po::options_description desc("Allowed options");
   desc.add_options()("help", "produce help message")(
-      "thread-count", po::value<int>(), "number of threads per node")(
-      "run-length", po::value<int>(),
-      "seconds before exiting")("nodes", po::value<int>(), "NUMA nodes used")(
+      "thread-count", po::value<int>()->default_value(8),
+      "number of threads per node")("run-length", po::value<int>(),
+                                    "seconds before exiting")(
+      "nodes", po::value<int>()->default_value(4), "NUMA nodes used")(
       "query", po::value<std::string>()->default_value("yahoo"),
       "Query to run [yahoo]")(
       "merger", po::value<std::string>()->default_value("direct"),
       "Result merger to use [eager | delayed | direct]")(
       "marker", po::value<std::string>()->default_value("count"),
-      "Window marker to use [count | clock]");
+      "Window marker to use [count | clock]")(
+      "window-size", po::value<int>()->default_value(100000),
+      "Size of window to output")(
+      "window-slide", po::value<int>()->default_value(10000),
+      "Window slide, tumbling if equal to window size")(
+      "batch-size", po::value<int>(),
+      "Number of elements in a batch")(
+      "shared-buffer-size", po::value<int>(),
+      "Number of slots in the shared buffer");
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
   po::notify(vm);
@@ -63,23 +70,32 @@ Configuration parse_args(int argc, const char **argv) {
     std::exit(1);
   }
 
-  if (vm.count("nodes")) {
-    NodesUsed = vm["nodes"].as<int>();
-  }
-  std::cout << "Number of nodes set to " << NodesUsed << ".\n";
-  if (vm.count("thread-count")) {
-    ThreadsPerNode = vm["thread-count"].as<int>();
-  }
-  ThreadCount = NodesUsed * ThreadsPerNode;
-  std::cout << "Number of threads per node set to " << ThreadsPerNode << ".\n";
-  std::cout << "Total number of threads set to " << ThreadCount << ".\n";
+  Setting::NODES_USED = vm["nodes"].as<int>();
+  Setting::THREADS_USED = Setting::NODES_USED * vm["thread-count"].as<int>();
+  std::cout << "Running on " << Setting::NODES_USED << " nodes using "
+            << Setting::THREADS_USED << " threads.\n";
   if (vm.count("run-length")) {
     RunLength = vm["run-length"].as<int>();
     std::cout << "Running experiment for " << RunLength << ".\n";
   }
-  return Configuration{vm["query"].as<std::string>(),
-                       vm["merger"].as<std::string>(),
-                       vm["marker"].as<std::string>()};
+  Setting::WINDOW_SLIDE = vm["window-slide"].as<int>();
+  Setting::WINDOW_SIZE = vm["window-size"].as<int>();
+  std::cout << "Window slide set to " << Setting::WINDOW_SLIDE
+            << " and size to " << Setting::WINDOW_SIZE << ".\n";
+
+  if (vm.count("batch-size")) {
+    Setting::BATCH_COUNT = vm["batch-size"].as<int>();
+  }
+  std::cout << "Batch size set to " << Setting::BATCH_COUNT << " elements.\n";
+  if (vm.count("shared-buffer-size")) {
+    Setting::SHARED_SLOTS = vm["shared-buffer-size"].as<int>();
+  }
+  std::cout << "Shared buffer has " << Setting::SHARED_SLOTS << " slots.\n";
+
+  return Configuration{
+      boost::algorithm::to_lower_copy(vm["query"].as<std::string>()),
+      boost::algorithm::to_lower_copy(vm["merger"].as<std::string>()),
+      boost::algorithm::to_lower_copy(vm["marker"].as<std::string>())};
 }
 
 void reportThroughput(boost::thread_group &group, bool &running) {
@@ -93,9 +109,10 @@ void reportThroughput(boost::thread_group &group, bool &running) {
     std::cout << "throughput: " << (double)throughput / reportTime / 1000000000
               << "GB/s" << std::endl;
     if (RunLength > 0) {
-      LatencyMonitor::PrintStatistics();
+      LatencyMonitor::DisableCollection();
       running = false;
       group.join_all();
+      LatencyMonitor::PrintStatistics();
       exit(0);
     }
   }
@@ -107,19 +124,21 @@ template <template <typename> typename TQuery,
           template <typename, typename> typename TResultMerger,
           template <typename> typename TWindowMarker>
 void start() {
+  numa_set_preferred(MAIN_ON_NODE);
   using Types =
       NodeCoordinator<TQuery, TTableProvider, TResultMerger, TWindowMarker>;
   using _NodeCoordinator = typename Types::Impl;
+  _NodeCoordinator::slider.Init();
   using Query = typename Types::Query;
   Setting::BATCH_SIZE =
       Setting::BATCH_COUNT * sizeof(typename Query::InputSchema);
   using _Executor = Executor<Query>;
   std::vector<_NodeCoordinator *> coordinators;
   std::vector<_Executor *> workers;
-  auto NodesUsed = 1 + ((ThreadCount - 1) / ThreadsPerNode);
-  Setting::NODES_USED = NodesUsed;
-  Setting::THREADS_USED = ThreadCount;
-  auto ThreadsToAllocate = ThreadCount;
+  auto NodesUsed = Setting::NODES_USED;
+  _NodeCoordinator::InitializeSharedRegion();
+  auto ThreadsToAllocate = Setting::THREADS_USED;
+  auto ThreadsPerNode = ThreadsToAllocate / NodesUsed;
   auto staticData = Query::loadStaticData(NodesUsed);
   for (size_t i = 0; i < NodesUsed; i++) {
     numa_set_preferred(i);
@@ -145,11 +164,10 @@ void start() {
     numa_set_preferred(i);
     coordinators[i]->SetCoordinators(coordinators);
   }
-  numa_set_preferred(MAIN_ON_NODE);
 
   boost::thread_group workerThreads;
   bool startRunning = false;
-  for (unsigned int i = 0; i < ThreadCount; ++i) {
+  for (unsigned int i = 0; i < Setting::THREADS_USED; ++i) {
     auto thread = workerThreads.create_thread([i, &workers, &startRunning]() {
       workers[i]->RunWorker(startRunning);
     });
@@ -188,12 +206,9 @@ static std::unordered_map<Configuration, StarterFunc, ConfigurationHash>
 int main(int argc, const char **argv) {
   assert(Setting::BATCH_SIZE % Setting::PAGE_SIZE == 0);
   numa_set_bind_policy(1);
-  numa_set_preferred(MAIN_ON_NODE);
   auto fromNodes = numa_all_nodes_ptr;
   auto toNodes = numa_parse_nodestring("1");
   numa_migrate_pages(0, fromNodes, toNodes);
-  numa_free_nodemask(fromNodes);
-  numa_free_nodemask(toNodes);
 
   auto configuration = parse_args(argc, argv);
   std::cout << "Running query: '" << configuration.Query << "' merger: '"

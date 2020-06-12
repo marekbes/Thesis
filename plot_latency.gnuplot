@@ -5,7 +5,6 @@ set grid ytics lt 0 lw 1 lc rgb "#bbbbbb"
 set style line 5 lw 3 pt 6
 #set multiplot layout 1,2
 set style data candlesticks
-set title "100k elements per window"
 set boxwidth 0.5
 set xlabel "Component configuration"
 set ylabel "Latency in ms"

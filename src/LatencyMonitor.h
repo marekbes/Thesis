@@ -31,6 +31,10 @@ public:
     rawMeasurements.push_back(dt);
   }
 
+  static void DisableCollection() {
+    active = false;
+  }
+
   static void PrintStatistics() {
     active = false;
       std::copy(rawMeasurements.begin(), rawMeasurements.end(),

@@ -1,5 +1,6 @@
 #ifndef PROOFOFCONCEPT_YAHOOQUERY_H
 #define PROOFOFCONCEPT_YAHOOQUERY_H
+
 #include "../QueryTask.h"
 #include "../Setting.h"
 #include <atomic>
@@ -12,7 +13,6 @@
 
 struct CounterVal {
   long _1;
-  long _2;
 };
 
 template <typename TMapProvider> class YahooQuery {
@@ -24,6 +24,7 @@ public:
   using LocalValueType = CounterVal;
   using GlobalValueType = std::atomic<int64_t>;
   using TResult = typename MapProvider::TResult;
+  using MapType = typename MapProvider::MapType;
   struct InputSchema {
     long timestamp;
     long padding_0;
@@ -38,9 +39,10 @@ public:
   HashTable<long, long> StaticJoinTable;
   MapProvider TablePool;
   std::function<void(TResult &&)> OutputCb;
-  inline static long ComputeTimestamp(const InputSchema &input,
+
+  inline static long ComputeTimestamp (const InputSchema &input,
                                       const long timestampOffset) {
-    return (input.timestamp + timestampOffset) / 100000;
+    return (input.timestamp + timestampOffset) / Setting::WINDOW_SLIDE;
   }
 
 public:
@@ -86,7 +88,7 @@ public:
       if (!foundId) {
         continue;
       }
-      CounterVal curVal{1, input[i].timestamp};
+      CounterVal curVal{1};
       countMap->insert_or_modify(campaignId, curVal, windowId);
     }
     OutputCb(TResult{lastWindowId, startingWindow, false, 0,
@@ -113,6 +115,7 @@ public:
   void SetOutputCb(std::function<void(TResult &&)> outputCb) {
     this->OutputCb = std::move(outputCb);
   }
+
   static std::vector<char> loadStaticData(int totalNodes) {
     auto path =
         Setting::DATA_PATH + "input_" + std::to_string(totalNodes) + ".dat";
@@ -148,6 +151,10 @@ public:
   static long ComputeTimestampOffset(int batch) {
     return (batch / Setting::DATA_COUNT) * Setting::DATA_COUNT *
            Setting::BATCH_COUNT * Setting::NODES_USED;
+  }
+
+  static inline LocalValueType ConvertToLocal(GlobalValueType &global) {
+    return LocalValueType{global.load()};
   }
 };
 

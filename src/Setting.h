@@ -8,7 +8,7 @@
 class Setting {
 public:
   // Tuple count in a batch
-  static const long BATCH_COUNT = 1024 * 16;
+  static long BATCH_COUNT;
   // Batch size in bytes
   static long BATCH_SIZE;
   // Number of batches of data
@@ -18,6 +18,10 @@ public:
   static int THREADS_USED;
   static boost::atomic_int64_t DataCounter;
   static const std::string DATA_PATH;
+  static int WINDOW_SLIDE;
+  static int WINDOW_SIZE;
+  static const int MAP_POOL_SIZE = 1024 * 16;
+  static int SHARED_SLOTS;
 };
 
 #endif // PROOFOFCONCEPT_SETTING_H

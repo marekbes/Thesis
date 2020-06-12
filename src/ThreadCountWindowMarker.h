@@ -67,7 +67,7 @@ void ThreadCountWindowMarker<TCoordinator>::MarkWindowDone(long fromWindowId,
     char name[100];
     pthread_getname_np(pthread_self(), name, 100);
     stream << name << " Marking windowId: " << windowId
-           << " new count: " << preIncrement + 1 << std::endl;
+           << " new count: " << preIncrement + 1  << " seen id: " << group.windowId.load() << std::endl;
     std::cout << stream.str();
 #endif
     //    if (preIncrement + 1 == Setting::THREADS_USED) {

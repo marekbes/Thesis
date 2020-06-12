@@ -373,4 +373,14 @@ public:
   float load_factor() const {
     return static_cast<float>(_num_filled) / static_cast<float>(_num_buckets);
   }
+
+  void merge(HashTable &other) {
+    auto *buckets = other.getBuckets();
+    for (size_t i = 0; i < other.getNumberOfBuckets(); ++i) {
+      if (buckets[i].state) {
+        insert_or_modify(buckets[i].key, buckets[i].value,
+                         buckets[i].timestamp);
+      }
+    }
+  }
 };
