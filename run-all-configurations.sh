@@ -13,7 +13,7 @@ run() {
 for window in 10000 50000 100000; do
   for marker in Clock Count; do
     for merger in Delayed Direct Eager; do
-      for threads in 8; do
+      for threads in 1 2 4 8; do
         run 1 $threads $merger $marker $window
       done
       for nodes in 2 3 4; do

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+mkdir build
+(cd build && cmake .. && make)
+
 for (( i = 1; i <= 4; i++ )); do
     ./build/inputgen --nodes $i
 done
