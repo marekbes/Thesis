@@ -3,6 +3,7 @@ project(proofOfConcept)
 
 set(CMAKE_CXX_STANDARD 20)
 add_executable(baseline baseline/HashTable.h baseline/Semaphore.h baseline/main.cpp)
+add_executable(inputgen inputgen/inputgen.cpp)
 
 add_executable(proofOfConcept src/HashTable.h src/ObjectPool.h src/NodeCoordinator.h src/Setting.cpp src/Executor.h src/runner.cpp src/queries/YahooQuery.h src/QueryTask.h src/HashTablePool.h src/Setting.h src/TaskResult.h src/NumaAlloc.h src/ResultGroup.cpp src/ResultGroup.h src/QueryTask.cpp src/TaskResult.cpp src/queries/SmartGrid2.cpp src/queries/SmartGrid2.h src/HashFunctions.cpp src/HashFunctions.h src/ThreadCountWindowMarker.h src/AbstractNodeCoordinator.h src/EagerResultMerger.h src/DelayedResultMerger.h src/ThreadClockWindowMarker.h src/DirectResultMerger.h src/DefaultTableProvider.h src/LatencyMonitor.h src/LatencyMonitor.cpp src/SlidingWindowHandler.h)
 
@@ -26,6 +27,9 @@ include_directories(src/concurrentqueue)
 
 target_link_libraries(proofOfConcept PRIVATE
         numa tbb
+        ${Boost_LIBRARIES})
+
+target_link_libraries(inputgen PRIVATE
         ${Boost_LIBRARIES})
 
 target_link_libraries(baseline PRIVATE

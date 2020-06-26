@@ -2,7 +2,7 @@
 
 run() {
   echo -n "$4 $3 $1 $(($2 * $1)) $5"
-  output=$(./build/proofOfConcept --nodes $1 --thread-count $2 --merger $3 --marker $4 --run-length 20 --window-size $5 --window-slide $5)
+  output=$(./build/proofOfConcept --nodes $1 --thread-count $2 --merger $3 --marker $4 --run-length 20 --window-size $5 --window-slide $5 --input $(pwd)\\)
   if [ $? -ne 0 ]; then
     echo $output
   fi
