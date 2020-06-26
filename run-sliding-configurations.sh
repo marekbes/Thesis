@@ -3,7 +3,7 @@
 run() {
   echo -n "$4 $3 $5"
   windowSize=$(($5 * 3))
-  output=$(./build/proofOfConcept --nodes $1 --thread-count $2 --merger $3 --marker $4 --run-length 20 --window-slide $5 --window-size $windowSize --shared-buffer-size 50000 --input $(pwd)\\ 2>&1)
+  output=$(./build/proofOfConcept --nodes $1 --thread-count $2 --merger $3 --marker $4 --run-length 20 --window-slide $5 --window-size $windowSize --shared-buffer-size 50000 --input $(pwd)/ 2>&1)
   if [ $? -ne 0 ]; then
     echo $output
   fi
