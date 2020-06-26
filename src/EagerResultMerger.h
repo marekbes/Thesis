@@ -17,7 +17,7 @@ public:
     std::atomic<LatencyMonitor::Timestamp_t> latencyMark;
 
     ResultGroupData()
-        : results(200), latencyMark(LatencyMonitor::Timestamp_t::max()) {}
+        : results(Setting::AGGREGATE_KEYS), latencyMark(LatencyMonitor::Timestamp_t::max()) {}
 
     void reset() {
       results.clear();

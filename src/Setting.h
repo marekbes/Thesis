@@ -1,7 +1,7 @@
 #ifndef PROOFOFCONCEPT_SETTING_H
 #define PROOFOFCONCEPT_SETTING_H
 
-#include "TaskResult.h"
+#include <string>
 #include <boost/atomic.hpp>
 #include <zconf.h>
 
@@ -17,11 +17,12 @@ public:
   static int NODES_USED;
   static int THREADS_USED;
   static boost::atomic_int64_t DataCounter;
-  static const std::string DATA_PATH;
+  static std::string DATA_PATH;
   static int WINDOW_SLIDE;
   static int WINDOW_SIZE;
   static const int MAP_POOL_SIZE = 1024 * 16;
   static int SHARED_SLOTS;
+  static int AGGREGATE_KEYS;
 };
 
 #endif // PROOFOFCONCEPT_SETTING_H

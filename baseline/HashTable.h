@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Setting.h"
 #include <climits>
 #include <iterator>
 #include <utility>
+#include <bits/stdc++.h>
 //#include <cstring>
 
 #define MAP_SIZE 256
@@ -57,7 +57,7 @@ private:
 
   // int*      _reset_cnts   = nullptr;
 public:
-  HashTable() : HashTable(Setting::AGGREGATE_KEYS){};
+  HashTable() : HashTable(256){};
 
   HashTable(size_t size) : _num_buckets(size), _mask(size - 1) {
     if (!(_num_buckets && !(_num_buckets & (_num_buckets - 1)))) {

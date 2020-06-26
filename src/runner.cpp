@@ -60,7 +60,9 @@ Configuration parse_args(int argc, const char **argv) {
       "batch-size", po::value<int>(),
       "Number of elements in a batch")(
       "shared-buffer-size", po::value<int>(),
-      "Number of slots in the shared buffer");
+      "Number of slots in the shared buffer")(
+      "input", po::value<std::string>(),
+      "Path to directory containing input");
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
   po::notify(vm);
@@ -91,6 +93,10 @@ Configuration parse_args(int argc, const char **argv) {
     Setting::SHARED_SLOTS = vm["shared-buffer-size"].as<int>();
   }
   std::cout << "Shared buffer has " << Setting::SHARED_SLOTS << " slots.\n";
+  if (vm.count("input")) {
+    Setting::DATA_PATH = vm["input"].as<std::string>();
+  }
+  std::cout << "Input path: '" << Setting::DATA_PATH << "'.\n";
 
   return Configuration{
       boost::algorithm::to_lower_copy(vm["query"].as<std::string>()),

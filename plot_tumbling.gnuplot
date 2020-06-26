@@ -1,18 +1,15 @@
-
-set xtics (10000,25000,50000,75000,10000)
-set xrange [0:120000]
-set yrange [0:24]
-set key below
+set yrange [0:25]
+set xrange [0:100000]
+set xtics (10000,25000,50000,75000,100000)
 set grid ytics lt 0 lw 1 lc rgb "#bbbbbb"
-set style line 5 lw 3 pt 6
+set title "Window slide impact on throughput"
 set ylabel "Throughput in GB/s"
 set style data lp
-set title "Window slide impact on throughput"
-set bmargin 3.5
-set xlabel "Window Slide in elements"
-plot "< awk '$1 == \"count\" && $2 == \"eager\"' tumbling_run_0.txt" using 3:4 title "Count,Eager",\
-    "< awk '$1 == \"count\" && $2 == \"delayed\"' tumbling_run_0.txt" using 3:4 title "Count,Delayed",\
-    "< awk '$1 == \"count\" && $2 == \"direct\"' tumbling_run_0.txt" using 3:4 title "Count,Direct",\
-    "< awk '$1 == \"clock\" && $2 == \"eager\"' tumbling_run_0.txt" using 3:4 title "Clock,Eager",\
-    "< awk '$1 == \"clock\" && $2 == \"delayed\"' tumbling_run_0.txt" using 3:4 title "Clock,Delayed",\
-    "< awk '$1 == \"clock\" && $2 == \"direct\"' tumbling_run_0.txt" using 3:4 title "Clock,Direct"
+set xlabel "Window Slide"
+set key below
+plot "< awk '$1 == \"Count\" && $2 == \"Direct\"' results_sliding.txt" using 3:4 ls 1 pt 8 title "Count,Direct",\
+    "< awk '$1 == \"Clock\" && $2 == \"Direct\"' results_sliding.txt" using 3:4 ls 2 pt 2 title "Clock,Direct",\
+    "< awk '$1 == \"Count\" && $2 == \"Eager\"' results_sliding.txt" using 3:4 ls 3 pt 3 title "Count,Eager",\
+    "< awk '$1 == \"Clock\" && $2 == \"Eager\"' results_sliding.txt" using 3:4 ls 4 pt 4 title "Clock,Eager",\
+    "< awk '$1 == \"Count\" && $2 == \"Delayed\"' results_sliding.txt" using 3:4 ls 7 pt 1 title "Count,Delayed",\
+    "< awk '$1 == \"Clock\" && $2 == \"Delayed\"' results_sliding.txt" using 3:4 ls 6 pt 6 title "Clock,Delayed"
